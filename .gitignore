@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Large data
+data/
+datasets/
+outputs/
+results/
+checkpoints/
+weights/
+models/
+
+# Generated files
+*.ply
+*.pcd
+*.glb
+*.bag
+*.db3
+*.npy
+*.npz
+*.mp4
+*.avi
+*.mov
+
+# Logs
+logs/
+*.log
+
+# OS/editor
+.DS_Store
+.vscode/
+.idea/
