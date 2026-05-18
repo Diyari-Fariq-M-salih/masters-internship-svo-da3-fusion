@@ -234,3 +234,50 @@ p.write_text(text)
 print(p.read_text())
 PY
 ```
+
+- create the main docker file in dockerfile.svo_noetic
+```bash
+sudo docker build -f docker/Dockerfile.svo_noetic -t svo-noetic-base .
+```
+- test
+```bash
+sudo docker run --rm -it svo-noetic-base bash -lc "source /opt/ros/noetic/setup.bash && rosversion -d && catkin --version"
+```
+- output
+```bash
+ROS: noetic
+catkin_tools: 0.9.4
+Python: 3.8.10
+```
+
+## create an SVO workspace inside the mounted repo, but do not build yet.
+
+Run this from the host repo root:
+```bash
+mkdir -p svo_ws/src
+cp -r external/rpg_svo_pro_open svo_ws/src/
+cp patches/svo/dependencies_https.yaml svo_ws/src/dependencies_https.yaml
+```
+Then start the container again:
+```bash
+sudo docker run --rm -it \
+  -v "$PWD":/workspace/project \
+  svo-noetic-base \
+  bash
+```
+Inside the container:
+```bash
+source /opt/ros/noetic/setup.bash
+cd /workspace/project/svo_ws
+
+catkin config --init --mkdirs --extend /opt/ros/noetic \
+  --cmake-args -DCMAKE_BUILD_TYPE=Release -DEIGEN3_INCLUDE_DIR=/usr/include/eigen3
+
+cd src
+vcs-import < dependencies_https.yaml
+touch minkindr/minkindr_python/CATKIN_IGNORE
+```
+Then check:
+```bash
+ls
+```

@@ -1,0 +1,27 @@
+FROM osrf/ros:noetic-desktop-full
+
+ENV DEBIAN_FRONTEND=noninteractive
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    curl \
+    build-essential \
+    cmake \
+    python3-catkin-tools \
+    python3-vcstool \
+    python3-osrf-pycommon \
+    libglew-dev \
+    libopencv-dev \
+    libyaml-cpp-dev \
+    libblas-dev \
+    liblapack-dev \
+    libsuitesparse-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+RUN echo "source /opt/ros/noetic/setup.bash" >> /root/.bashrc
+
+CMD ["/bin/bash"]
