@@ -3,7 +3,10 @@
 ```text
 tree -a -L 3 -I '.git|__pycache__|*.pyc'
 ```
-
+- Enter Docker for SVO
+```bash
+./scripts/enter_svo_docker.sh
+```
 
 ## le 18 mai 2026
 - considering how SVO needs docker, while DA3 is a python project i recommend a three-layer architecture:
@@ -319,3 +322,19 @@ Issues fixed:
 Next:
 - Save the DBoW2 HTTPS patch reproducibly.
 - Test launching/locating SVO ROS nodes.
+
+## SVO ROS package verification
+
+After building SVO in the Noetic Docker container, the workspace was sourced with:
+
+```bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+rospack find svo_ros
+# /workspace/project/svo_ws/src/rpg_svo_pro_open/svo_ros
+
+rospack find svo
+# /workspace/project/svo_ws/src/rpg_svo_pro_open/svo
+
+rospack find svo_msgs
+# /workspace/project/svo_ws/src/rpg_svo_pro_open/svo_msgs
