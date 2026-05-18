@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y \
     git \
     wget \
     curl \
+    openssh-client \
     build-essential \
     cmake \
     autoconf \
@@ -22,6 +23,8 @@ RUN apt-get update && apt-get install -y \
     liblapack-dev \
     libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /root/.ssh && ssh-keyscan github.com >> /root/.ssh/known_hosts
 
 WORKDIR /workspace
 
