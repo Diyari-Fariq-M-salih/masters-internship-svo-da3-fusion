@@ -132,3 +132,42 @@ GPU: NVIDIA GeForce RTX 4070
 - CUDA available in PyTorch: yes
 
 Important: kernel `6.8.0-111-generic` did not have a working NVIDIA module. Use `6.8.0-117-generic` for DA3/GPU work.
+
+Testing DA3
+```bash
+da3 image data_local/test_images/test_000.png \
+  --export-dir outputs/da3_test \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+## naming mismatch error:
+## DA3 CLI local patch
+
+During the first `da3 image ... --export-format mini_npz` test, the DA3 CLI failed because of an internal argument naming mismatch.
+
+Observed errors:
+- `NameError: name 'reference_view_strategy' is not defined`
+- `TypeError: run_inference() got an unexpected keyword argument 'reference_view_strategy'`
+
+Cause:
+- `cli.py` defines the CLI option as `ref_view_strategy`.
+- `run_inference()` also expects `ref_view_strategy`.
+- Some CLI calls incorrectly passed `reference_view_strategy`.
+
+Local fix:
+- In `external/Depth-Anything-3/src/depth_anything_3/cli.py`, replaced the incorrect keyword usage with:
+  `ref_view_strategy=ref_view_strategy`
+
+Status:
+- After this patch, `da3 image ... --export-format mini_npz` successfully exported:
+  - `depth.npy`
+  - `conf.npy`
+  - `intrinsics.npy`
+  - `extrinsics.npy`
+
+Note:
+- This is a local patch inside the external DA3 clone. Before reporting upstream, verify whether the bug still exists on the latest official commit.
+
