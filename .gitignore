@@ -39,3 +39,12 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+external/Depth-Anything-3/
+external/rpg_svo_pro_open/
+data_local/
+outputs/
+*.bag
+*.ply
+*.npy
+*.npz
