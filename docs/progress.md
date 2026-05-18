@@ -135,6 +135,27 @@ Important: kernel `6.8.0-111-generic` did not have a working NVIDIA module. Use 
 
 Testing DA3
 ```bash
+mkdir -p data_local/test_images outputs/da3_test
+```
+```bash
+python - <<'PY'
+import cv2
+import numpy as np
+from pathlib import Path
+
+Path("data_local/test_images").mkdir(parents=True, exist_ok=True)
+
+h, w = 480, 640
+img = np.zeros((h, w, 3), dtype=np.uint8)
+img[:, :, 0] = np.linspace(0, 255, w, dtype=np.uint8)
+img[:, :, 1] = np.linspace(0, 255, h, dtype=np.uint8)[:, None]
+img[:, :, 2] = 120
+
+cv2.imwrite("data_local/test_images/test_000.png", img)
+print("Saved data_local/test_images/test_000.png")
+PY
+```
+```bash
 da3 image data_local/test_images/test_000.png \
   --export-dir outputs/da3_test \
   --export-format mini_npz \
