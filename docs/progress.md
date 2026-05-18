@@ -211,3 +211,26 @@ Interpretation:
 - The DA3 depth and intrinsics are usable for 3D back-projection.
 - This test does not yet use SVO poses.
 - Next fusion milestone is to replace identity/DA3-only camera frame with SVO camera poses.
+
+## cloned SVO:
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+
+git clone https://github.com/uzh-rpg/rpg_svo_pro_open.git external/rpg_svo_pro_open
+```
+```bash
+mkdir -p patches/svo
+cp external/rpg_svo_pro_open/dependencies.yaml patches/svo/dependencies_https.yaml
+
+python - <<'PY'
+from pathlib import Path
+
+p = Path("patches/svo/dependencies_https.yaml")
+text = p.read_text()
+text = text.replace("git@github.com:", "https://github.com/")
+text = text.replace(".git", ".git")
+p.write_text(text)
+
+print(p.read_text())
+PY
+```
