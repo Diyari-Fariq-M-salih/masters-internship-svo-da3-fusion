@@ -63,10 +63,10 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - pytorch
+  - pytorch=2.3.1
   - torchvision
   - torchaudio
-  - pytorch-cuda=12.4
+  - pytorch-cuda=12.1
   - numpy<2
 ```
 then
@@ -87,3 +87,48 @@ Driver: 580.142
 CUDA shown by driver: 13.0
 Ethernet: enp5s0 connected
 ```
+
+test DE3
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+conda activate da3
+
+python - <<'PY'
+import torch
+print("Torch:", torch.__version__)
+print("Torch CUDA build:", torch.version.cuda)
+print("CUDA available:", torch.cuda.is_available())
+print("Device count:", torch.cuda.device_count())
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+PY
+```
+
+confirm CUDA + DE3:
+```bash
+python - <<'PY'
+import torch
+import depth_anything_3
+
+print("Depth Anything 3 import OK")
+print("CUDA available:", torch.cuda.is_available())
+print("GPU:", torch.cuda.get_device_name(0))
+PY
+```
+```bash
+Depth Anything 3 import OK
+CUDA available: True
+GPU: NVIDIA GeForce RTX 4070
+```
+## Working machine setup
+
+- Machine: lab PC `qcartech`
+- Kernel used for GPU work: `6.8.0-117-generic`
+- GPU: NVIDIA GeForce RTX 4070, 12 GB VRAM
+- NVIDIA driver: 580.142
+- Conda env: `da3`
+- PyTorch: 2.3.1+cu121
+- Torch CUDA build: 12.1
+- CUDA available in PyTorch: yes
+
+Important: kernel `6.8.0-111-generic` did not have a working NVIDIA module. Use `6.8.0-117-generic` for DA3/GPU work.
