@@ -163,15 +163,13 @@ da3 image data_local/test_images/test_000.png \
   --process-res 504 \
   --auto-cleanup
 ```
-
-## naming mismatch error:
 ## DA3 CLI local patch
 
 During the first `da3 image ... --export-format mini_npz` test, the DA3 CLI failed because of an internal argument naming mismatch.
 
 Observed errors:
 - `NameError: name 'reference_view_strategy' is not defined`
-- `TypeError: run_inference() got an unexpected keyword argument 'reference_view_strategy'`
+- `TypeError: run_inference(## naming mismatch error:) got an unexpected keyword argument 'reference_view_strategy'`
 
 Cause:
 - `cli.py` defines the CLI option as `ref_view_strategy`.
@@ -192,3 +190,24 @@ Status:
 Note:
 - This is a local patch inside the external DA3 clone. Before reporting upstream, verify whether the bug still exists on the latest official commit.
 
+## DA3 depth-to-PLY sanity test
+
+Converted DA3 `mini_npz` output into a colored point cloud.
+
+Input:
+- RGB: `data_local/test_images/test_000.png`
+- Depth: `outputs/da3_test/exports/mini_npz/depth.npy`
+- Intrinsics: `outputs/da3_test/exports/mini_npz/intrinsics.npy`
+
+Output:
+- `outputs/da3_test/test_000_da3_cloud.ply`
+
+Result:
+- Points: 11970
+- DA3 processed resolution: 504x378
+- PLY size: 458K
+
+Interpretation:
+- The DA3 depth and intrinsics are usable for 3D back-projection.
+- This test does not yet use SVO poses.
+- Next fusion milestone is to replace identity/DA3-only camera frame with SVO camera poses.
