@@ -554,3 +554,23 @@ After one frame works:
 ```text
 1 frame → 2 frames → 16-frame PCL1 → 100-frame chunked sequence → Sim(3) alignment
 ```
+Final target: parallel/asynchronous, not purely series.
+
+For the offline prototype, we may run them separately or in series for debugging:
+
+Run SVO → save trajectory.txt
+Run DA3 → save depth maps
+Fuse outputs → save .ply
+
+But for the real-time drone version, they should run like this:
+```text
+Camera stream
+   ↓
+Frame buffer
+   ├── SVO thread: runs on every frame, real-time pose tracking
+   └── DA3 thread: runs on selected keyframes, slower dense depth
+                 ↓
+Fusion thread: waits until it has pose + depth for a keyframe
+                 ↓
+Point-cloud update
+```
