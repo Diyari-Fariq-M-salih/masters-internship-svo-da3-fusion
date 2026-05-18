@@ -281,3 +281,41 @@ Then check:
 ```bash
 ls
 ```
+```text
+DA3:
+  working in Conda env da3
+  CUDA works on RTX 4070
+  mini_npz export works
+  depth → PLY sanity test works
+
+SVO:
+  Docker ROS Noetic base works
+  workspace imported successfully
+  all 34 SVO packages built successfully
+```
+```text
+note: dbow2_catkin was trying to clone:
+git@github.com:dorian3d/DBoW2.git
+
+We patched it to:
+https://github.com/dorian3d/DBoW2.git
+```
+
+## SVO Docker build success
+
+SVO Pro was built successfully inside the ROS Noetic Docker environment.
+
+Environment:
+- Docker image: `svo-noetic-base`
+- Base: `osrf/ros:noetic-desktop-full`
+- Workspace: `svo_ws`
+- Build command: `catkin build`
+- Result: all 34 packages succeeded
+
+Issues fixed:
+- Added `autoconf`, `automake`, and `libtool` to the Dockerfile because `glog_catkin` needed `libtoolize`.
+- Patched `dbow2_catkin` internal clone URL from SSH to HTTPS because Docker did not have GitHub SSH credentials.
+
+Next:
+- Save the DBoW2 HTTPS patch reproducibly.
+- Test launching/locating SVO ROS nodes.

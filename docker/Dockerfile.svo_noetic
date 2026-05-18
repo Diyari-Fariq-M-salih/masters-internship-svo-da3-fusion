@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     build-essential \
     cmake \
+    autoconf \
+    automake \
+    libtool \
     python3-catkin-tools \
     python3-vcstool \
     python3-osrf-pycommon \
