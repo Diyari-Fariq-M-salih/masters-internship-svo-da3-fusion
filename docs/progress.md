@@ -352,11 +352,12 @@ With roscore running in another Docker shell, the SVO node started successfully.
 Verified nodes:
 
 rosnode list
+```
 # /rosout
 # /svo
-
+```
 Verified topics:
-
+```
 rostopic list
 # /cam0/image_raw
 # /imu0
@@ -366,21 +367,97 @@ rostopic list
 # /svo/keyframes
 # /svo/info
 # ...
-
+```
 Status:
 
 SVO runtime environment is valid.
 The node launches without RViz.
 It is ready for a real input stream/bag/image publisher.
 
-Then commit:
-
+download rosbag for sanity test:
 ```bash
-git add configs/svo_launch/euroc_mono_no_rviz.launch \
-        scripts/enter_svo_docker.sh \
-        scripts/setup_svo_ws.sh \
-        docker/Dockerfile.svo_noetic \
-        patches/svo/patch_dbow2_https.sh \
-        docs/progress.md
+mkdir -p data_local/euroc
+cd data_local/euroc
 
-git commit -m "Verify minimal SVO runtime in Docker"
+wget http://robotics.ethz.ch/~asl-datasets/ijrr_euroc_mav_dataset/machine_hall/MH_01_easy/MH_01_easy.bag
+```
+or official page link https://projects.asl.ethz.ch/datasets/euroc-mav/
+
+with data set extracted, testing svo:
+roscore
+```bash
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+roscore
+```
+svo node
+```bash
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+roslaunch /workspace/project/configs/svo_launch/euroc_mono_no_rviz.launch
+```
+bag
+```bash
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+rosbag play /workspace/project/data_local/euroc/machine_hall/MH_01_easy/MH_01_easy.bag \
+  --clock \
+  -r 0.5
+```
+record the SVO pose output
+
+While roscore, SVO, and rosbag play are running, open one more host terminal:
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+mkdir -p /workspace/project/outputs/svo_mh01
+
+rosbag record -O /workspace/project/outputs/svo_mh01/svo_pose_cam.bag \
+  /svo/pose_cam/0 \
+  /svo/pose_imu \
+  /svo/info
+```
+generate tum format:
+```bash
+cd /workspace/project
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+python3 scripts/rosbag_pose_to_tum.py \
+  --bag outputs/svo_mh01/svo_pose_cam.bag \
+  --topic /svo/pose_cam/0 \
+  --output outputs/svo_mh01/svo_pose_cam_tum.txt
+```
+
+## SVO trajectory export test
+
+Ran SVO on EuRoC `MH_01_easy.bag` and recorded pose output.
+
+Recorded bag:
+- `outputs/svo_mh01/svo_pose_cam.bag`
+
+Topics:
+- `/svo/pose_cam/0`: 702 messages
+- `/svo/pose_imu`: 702 messages
+- `/svo/info`: 702 messages
+
+Converted `/svo/pose_cam/0` to TUM trajectory format:
+
+- `outputs/svo_mh01/svo_pose_cam_tum.txt`
+
+Result:
+- 702 poses
+- 703 lines including header
+- Format: `timestamp tx ty tz qx qy qz qw`
+
+Status:
+- SVO can process EuRoC MH_01_easy and export a usable trajectory file.
+- Next step is to extract the matching RGB frames from the same EuRoC bag for DA3.
