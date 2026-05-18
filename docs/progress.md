@@ -338,3 +338,49 @@ rospack find svo
 
 rospack find svo_msgs
 # /workspace/project/svo_ws/src/rpg_svo_pro_open/svo_msgs
+```
+
+## SVO runtime sanity check
+
+Created and launched a minimal no-RViz SVO launch file:
+
+```bash
+roslaunch /workspace/project/configs/svo_launch/euroc_mono_no_rviz.launch
+```
+With roscore running in another Docker shell, the SVO node started successfully.
+
+Verified nodes:
+
+rosnode list
+# /rosout
+# /svo
+
+Verified topics:
+
+rostopic list
+# /cam0/image_raw
+# /imu0
+# /svo/pose_cam/0
+# /svo/pose_imu
+# /svo/pointcloud
+# /svo/keyframes
+# /svo/info
+# ...
+
+Status:
+
+SVO runtime environment is valid.
+The node launches without RViz.
+It is ready for a real input stream/bag/image publisher.
+
+Then commit:
+
+```bash
+git add configs/svo_launch/euroc_mono_no_rviz.launch \
+        scripts/enter_svo_docker.sh \
+        scripts/setup_svo_ws.sh \
+        docker/Dockerfile.svo_noetic \
+        patches/svo/patch_dbow2_https.sh \
+        docs/progress.md
+
+git commit -m "Verify minimal SVO runtime in Docker"

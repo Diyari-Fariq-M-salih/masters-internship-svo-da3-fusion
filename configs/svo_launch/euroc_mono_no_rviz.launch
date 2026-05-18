@@ -1,0 +1,22 @@
+<launch>
+  <arg name="calib_file" default="/workspace/project/svo_ws/src/rpg_svo_pro_open/svo_ros/param/calib/euroc_mono.yaml"/>
+
+  <node pkg="svo_ros" type="svo_node" name="svo" clear_params="true" output="screen" args="--v=0">
+
+    <!-- Camera topic -->
+    <param name="cam0_topic" value="/cam0/image_raw" type="str" />
+
+    <!-- IMU topic, included for EuRoC-style configs -->
+    <param name="imu_topic" value="/imu0" type="str" />
+
+    <!-- Calibration -->
+    <param name="calib_file" value="$(arg calib_file)" />
+
+    <!-- SVO parameters -->
+    <rosparam file="/workspace/project/svo_ws/src/rpg_svo_pro_open/svo_ros/param/vio_mono.yaml" />
+
+    <!-- Disable loop closure for first runtime test -->
+    <param name="runlc" value="false" />
+
+  </node>
+</launch>
