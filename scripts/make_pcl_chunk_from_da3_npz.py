@@ -131,6 +131,12 @@ def choose_pose_matrix(args, row, E_all, depth_idx):
         if E_all is None:
             raise KeyError("DA3 npz does not contain 'extrinsics'.")
         return da3_extrinsics_to_matrix(E_all[depth_idx])
+    
+    if args.pose_source == "da3_inv":
+        if E_all is None:
+            raise KeyError("DA3 npz does not contain 'extrinsics'.")
+        T = da3_extrinsics_to_matrix(E_all[depth_idx])
+        return np.linalg.inv(T).astype(np.float32)
 
     if args.pose_source == "identity":
         return np.eye(4, dtype=np.float32)
@@ -153,7 +159,7 @@ def main():
     parser.add_argument("--max_depth", type=float, default=None)
     parser.add_argument(
         "--pose_source",
-        choices=["svo", "da3", "identity"],
+        choices=["svo", "da3", "da3_inv", "identity"],
         default="svo",
         help="Pose source used to place each DA3 depth map into the output cloud.",
     )

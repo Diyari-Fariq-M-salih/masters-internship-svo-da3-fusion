@@ -770,3 +770,24 @@ The current result tells us:
 ✅ multi-frame PLY fusion works
 ⚠️ scale/alignment/filtering is still missing
 ```
+
+## Pose convention diagnostic
+
+Tested three pose sources for DA3 depth fusion:
+- `identity`
+- `svo`
+- `da3`
+- `da3_inv`
+
+Result:
+- Direct DA3 extrinsics produced smeared geometry.
+- Inverting DA3 extrinsics produced the best reconstruction so far.
+- This suggests DA3 `extrinsics` are not directly usable as `T_world_camera` for our backprojection convention; they should be inverted before use.
+- SVO poses are active but still need scale/alignment before they match the DA3 depth scale.
+
+Current best visual result:
+- `outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply`
+
+Next:
+- Add scale/alignment diagnostics for SVO poses.
+- Estimate Sim(3) between SVO trajectory and DA3-inverted trajectory over the matched frame chunk.
