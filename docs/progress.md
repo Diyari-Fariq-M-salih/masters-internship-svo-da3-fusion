@@ -461,3 +461,57 @@ Result:
 Status:
 - SVO can process EuRoC MH_01_easy and export a usable trajectory file.
 - Next step is to extract the matching RGB frames from the same EuRoC bag for DA3.
+
+
+## le 18 mai 2026
+- using extract_rosbag_images.py get 100 frames
+```bash
+cd /workspace/project
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+python3 scripts/extract_rosbag_images.py \
+  --bag data_local/euroc/machine_hall/MH_01_easy/MH_01_easy.bag \
+  --topic /cam0/image_raw \
+  --output_dir outputs/euroc_mh01/cam0_rgb \
+  --timestamps outputs/euroc_mh01/cam0_timestamps.csv \
+  --max_frames 100 \
+  --every_n 5
+```
+- convert to 16 since 100 frames in one tensor can lead to OOM, also consistant with:
+
+- PCL1 = 1–16 keyframes
+- PCL2 = 17–32 keyframes
+- PCL3 = 33–48 keyframes
+```bash
+mkdir -p outputs/euroc_mh01/cam0_rgb_016
+
+cp outputs/euroc_mh01/cam0_rgb/frame_0000{00..15}.png \
+   outputs/euroc_mh01/cam0_rgb_016/
+```
+- run DA3
+```bash
+da3 images outputs/euroc_mh01/cam0_rgb_016 \
+  --export-dir outputs/euroc_mh01/da3_016 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+output:
+```text
+PCL1 = 16 frames
+DA3 input tensor = [16, 3, 322, 504]
+Model forward = ~3.08 seconds
+Export = mini_npz successful
+
+results.npz
+  depth:      (16, 322, 504)
+  conf:       (16, 322, 504)
+  extrinsics: (16, 3, 4)
+  intrinsics: (16, 3, 3)
+
+```
+
+Important observation: DA3 changed the processed image size to 504 × 322
