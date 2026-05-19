@@ -45,6 +45,19 @@ def pose_to_matrix(row):
     return T
 
 
+def da3_extrinsics_to_matrix(E):
+    """
+    Convert DA3 3x4 extrinsics to a 4x4 transform.
+
+    For this diagnostic, we use DA3 extrinsics directly as a T_w_c-like
+    transform. If the resulting cloud looks inverted or odd, we can later
+    test the inverse convention as a separate option.
+    """
+    T = np.eye(4, dtype=np.float32)
+    T[:3, :4] = E.astype(np.float32)
+    return T
+
+
 def backproject_frame(rgb_bgr, depth, K, T_w_c, stride, max_depth):
     h, w = depth.shape
 
@@ -110,9 +123,24 @@ def save_ply(path, points, colors):
             )
 
 
+def choose_pose_matrix(args, row, E_all, depth_idx):
+    if args.pose_source == "svo":
+        return pose_to_matrix(row)
+
+    if args.pose_source == "da3":
+        if E_all is None:
+            raise KeyError("DA3 npz does not contain 'extrinsics'.")
+        return da3_extrinsics_to_matrix(E_all[depth_idx])
+
+    if args.pose_source == "identity":
+        return np.eye(4, dtype=np.float32)
+
+    raise ValueError(f"Unknown pose_source: {args.pose_source}")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Fuse DA3 depth chunk with SVO poses into one colored PLY."
+        description="Fuse DA3 depth chunk with selected poses into one colored PLY."
     )
     parser.add_argument("--rgb_dir", required=True)
     parser.add_argument("--da3_npz", required=True)
@@ -123,6 +151,12 @@ def main():
     parser.add_argument("--stride", type=int, default=6)
     parser.add_argument("--max_dt", type=float, default=0.20)
     parser.add_argument("--max_depth", type=float, default=None)
+    parser.add_argument(
+        "--pose_source",
+        choices=["svo", "da3", "identity"],
+        default="svo",
+        help="Pose source used to place each DA3 depth map into the output cloud.",
+    )
     args = parser.parse_args()
 
     rgb_dir = Path(args.rgb_dir)
@@ -130,6 +164,7 @@ def main():
 
     depth_all = da3["depth"]
     K_all = da3["intrinsics"]
+    E_all = da3["extrinsics"] if "extrinsics" in da3 else None
 
     rows = load_sync_rows(
         args.sync_csv,
@@ -138,7 +173,17 @@ def main():
         max_dt=args.max_dt,
     )
 
+    if not rows:
+        raise RuntimeError(
+            "No synchronized rows found. Check start_frame, end_frame, and max_dt."
+        )
+
     print(f"Using {len(rows)} synchronized frames")
+    print(f"Pose source: {args.pose_source}")
+    print(f"DA3 depth shape: {depth_all.shape}")
+    print(f"DA3 intrinsics shape: {K_all.shape}")
+    if E_all is not None:
+        print(f"DA3 extrinsics shape: {E_all.shape}")
 
     all_points = []
     all_colors = []
@@ -151,18 +196,21 @@ def main():
         rgb = cv2.imread(str(rgb_path), cv2.IMREAD_COLOR)
         if rgb is None:
             raise FileNotFoundError(rgb_path)
-        
+
+        # DA3 chunk indexing:
+        # original frame_id start_frame maps to DA3 depth index 0.
         depth_idx = frame_id - args.start_frame
+
         if depth_idx < 0 or depth_idx >= depth_all.shape[0]:
             raise IndexError(
                 f"Frame {frame_id} maps to DA3 depth index {depth_idx}, "
                 f"but depth array has shape {depth_all.shape}. "
                 f"Check start_frame/end_frame and DA3 chunk."
-        )
+            )
 
         depth = depth_all[depth_idx]
         K = K_all[depth_idx]
-        T_w_c = pose_to_matrix(row)
+        T_w_c = choose_pose_matrix(args, row, E_all, depth_idx)
 
         pts, cols = backproject_frame(
             rgb_bgr=rgb,
@@ -176,7 +224,10 @@ def main():
         all_points.append(pts)
         all_colors.append(cols)
 
-        print(f"Frame {frame_id}: {pts.shape[0]} points")
+        print(
+            f"Frame {frame_id} depth_idx {depth_idx} "
+            f"pose_source={args.pose_source}: {pts.shape[0]} points"
+        )
 
     points = np.concatenate(all_points, axis=0)
     colors = np.concatenate(all_colors, axis=0)
