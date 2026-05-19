@@ -515,3 +515,34 @@ results.npz
 ```
 
 Important observation: DA3 changed the processed image size to 504 × 322
+
+### rerecorded SVO for the first 30s to match the first 100 frames of DA3 
+```text
+outputs/svo_mh01_clean/svo_pose_cam.bag
+outputs/svo_mh01_clean/svo_pose_cam_tum.txt
+
+575 poses
+trajectory time range:
+1403636580.063555479 → 1403636608.863555431
+```
+
+using the sync script, we try to match them in a csv:
+```bash
+python scripts/sync_frames_to_svo.py \
+  --frames_csv outputs/euroc_mh01/cam0_timestamps.csv \
+  --svo_tum outputs/svo_mh01_clean/svo_pose_cam_tum.txt \
+  --output outputs/euroc_mh01/sync_016.csv \
+  --max_frames 16 \
+  --max_dt 0.20
+```
+output csv notes :
+```text 
+Only this row is bad:
+
+frame 0 → dt = 0.300s
+
+Everything from frame 2 onward is perfectly aligned, and frame 1 is acceptable:
+
+frame 1 → dt = 0.05s
+frame 2–15 → dt = 0.00s
+```
