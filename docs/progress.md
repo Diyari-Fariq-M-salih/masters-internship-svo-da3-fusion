@@ -546,3 +546,18 @@ Everything from frame 2 onward is perfectly aligned, and frame 1 is acceptable:
 frame 1 → dt = 0.05s
 frame 2–15 → dt = 0.00s
 ```
+
+Fuse DA3 depth chunk with SVO poses:
+```bash
+chmod +x scripts/make_pcl_chunk_from_da3_npz.py
+
+python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_mh01/cam0_rgb \
+  --da3_npz outputs/euroc_mh01/da3_016/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_mh01/sync_016.csv \
+  --output outputs/euroc_mh01/fusion/pcl_001_015.ply \
+  --start_frame 1 \
+  --end_frame 15 \
+  --stride 6 \
+  --max_dt 0.20
+```
