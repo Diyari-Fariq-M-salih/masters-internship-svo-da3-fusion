@@ -151,9 +151,17 @@ def main():
         rgb = cv2.imread(str(rgb_path), cv2.IMREAD_COLOR)
         if rgb is None:
             raise FileNotFoundError(rgb_path)
+        
+        depth_idx = frame_id - args.start_frame
+        if depth_idx < 0 or depth_idx >= depth_all.shape[0]:
+            raise IndexError(
+                f"Frame {frame_id} maps to DA3 depth index {depth_idx}, "
+                f"but depth array has shape {depth_all.shape}. "
+                f"Check start_frame/end_frame and DA3 chunk."
+        )
 
-        depth = depth_all[frame_id]
-        K = K_all[frame_id]
+        depth = depth_all[depth_idx]
+        K = K_all[depth_idx]
         T_w_c = pose_to_matrix(row)
 
         pts, cols = backproject_frame(

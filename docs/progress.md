@@ -561,3 +561,212 @@ python scripts/make_pcl_chunk_from_da3_npz.py \
   --stride 6 \
   --max_dt 0.20
 ```
+## current understanding
+DA3 answers:
+“For this image, what is the depth of each pixel?”
+
+SVO answers:
+“Where was the camera when this image was taken?”
+
+Then fusion does:
+
+pts_w = points placed into the global/world frame
+
+SVO pose
+→ move those local 3D points into a shared/world coordinate frame
+
+in current pcl_001_015.ply, SVO is being used here:
+```
+T_w_c = pose_to_matrix(row)
+pts_w = (T_w_c @ pts_c_h.T).T[:, :3]
+```
+Meaning:
+```
+pts_c = points in the camera frame from DA3 depth
+T_w_c = SVO camera pose
+pts_w = points placed into the global/world frame
+```
+
+DA3 creates the depth surface for each frame. SVO tells us where each frame belongs in 3D space. The fused point cloud exists because DA3 provides depth and SVO provides camera motion.
+
+## Vicon room 1 sanity test, same setup:
+folder structure 
+```bash
+masters-internship-svo-da3-fusion/data_local/euroc
+├── machine_hall
+│   ├── ._.DS_Store
+│   ├── .DS_Store
+│   ├── MH_01_easy
+│   │   ├── ._.DS_Store
+│   │   ├── .DS_Store
+│   │   ├── MH_01_easy.bag
+│   │   └── MH_01_easy.zip
+│   ├── MH_02_easy
+│   │   ├── MH_02_easy.bag
+│   │   └── MH_02_easy.zip
+│   ├── MH_03_medium
+│   │   ├── MH_03_medium.bag
+│   │   └── MH_03_medium.zip
+│   ├── MH_04_difficult
+│   │   ├── MH_04_difficult.bag
+│   │   └── MH_04_difficult.zip
+│   └── MH_05_difficult
+│       ├── MH_05_difficult.bag
+│       └── MH_05_difficult.zip
+├── machine_hall.zip
+├── vicon_room1
+│   ├── ._.DS_Store
+│   ├── .DS_Store
+│   ├── V1_01_easy
+│   │   ├── ._.DS_Store
+│   │   ├── .DS_Store
+│   │   ├── V1_01_easy.bag
+│   │   └── V1_01_easy.zip
+│   ├── V1_02_medium
+│   │   ├── V1_02_medium.bag
+│   │   └── V1_02_medium.zip
+│   └── V1_03_difficult
+│       ├── V1_03_difficult.bag
+│       └── V1_03_difficult.zip
+└── vicon_room1.zip
+```
+
+1. Run SVO clean recording on V1_01_easy
+
+Using the same 4-terminal setup.
+
+Terminal 1 — roscore
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+roscore
+```
+Terminal 2 — SVO
+```
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+roslaunch /workspace/project/configs/svo_launch/euroc_mono_no_rviz.launch
+```
+Terminal 3 — record SVO poses first
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+mkdir -p /workspace/project/outputs/svo_v1_01_clean
+
+rosbag record -O /workspace/project/outputs/svo_v1_01_clean/svo_pose_cam.bag \
+  /svo/pose_cam/0 \
+  /svo/pose_imu \
+  /svo/info
+```
+Terminal 4 — play first 30 seconds of Vicon Room
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+./scripts/enter_svo_docker.sh
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+rosbag play /workspace/project/data_local/euroc/vicon_room1/V1_01_easy/V1_01_easy.bag \
+  --clock \
+  -r 0.5 \
+  --duration=30
+```
+When playback finishes, stop the recorder with Ctrl+C.
+
+2. Convert SVO poses to TUM
+
+Inside Docker:
+```bash
+cd /workspace/project
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+python3 scripts/rosbag_pose_to_tum.py \
+  --bag outputs/svo_v1_01_clean/svo_pose_cam.bag \
+  --topic /svo/pose_cam/0 \
+  --output outputs/svo_v1_01_clean/svo_pose_cam_tum.txt
+```
+
+extract cam0 frames V1_01_easy:
+```bash
+cd /workspace/project
+source /opt/ros/noetic/setup.bash
+source /workspace/project/svo_ws/devel/setup.bash
+
+python3 scripts/extract_rosbag_images.py \
+  --bag data_local/euroc/vicon_room1/V1_01_easy/V1_01_easy.bag \
+  --topic /cam0/image_raw \
+  --output_dir outputs/euroc_v1_01/cam0_rgb \
+  --timestamps outputs/euroc_v1_01/cam0_timestamps.csv \
+  --max_frames 100 \
+  --every_n 5
+```
+
+frames to use 22-37:
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+
+rm -rf outputs/euroc_v1_01/cam0_rgb_022_037
+mkdir -p outputs/euroc_v1_01/cam0_rgb_022_037
+
+for i in $(seq -w 22 37); do
+  cp outputs/euroc_v1_01/cam0_rgb/frame_000${i}.png \
+     outputs/euroc_v1_01/cam0_rgb_022_037/
+done
+```
+This will include frames 0–37, but our PLY script can use only 22–37.
+```bash
+python scripts/sync_frames_to_svo.py \
+  --frames_csv outputs/euroc_v1_01/cam0_timestamps.csv \
+  --svo_tum outputs/svo_v1_01_clean/svo_pose_cam_tum.txt \
+  --output outputs/euroc_v1_01/sync_022_037.csv \
+  --max_frames 38 \
+  --max_dt 0.20
+```
+
+finally run:
+```bash
+python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_022_037.ply \
+  --start_frame 22 \
+  --end_frame 37 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10
+```
+output
+```text
+16 synchronized frames
+4,536 points per frame
+72,576 total points
+
+much more, This Vicon result is much better. It is still raw and sparse, but now the room geometry is recognizable
+```
+
+- quality is still low on the 3D reconstruction:
+```
+DA3 demo:
+DA3 depth + DA3 pose/extrinsics + DA3 confidence/export pipeline
+
+Our current pipeline:
+DA3 depth + SVO pose + raw back-projection + no scale alignment + no filtering
+```
+
+The current result tells us:
+```
+✅ DA3 depth works
+✅ SVO pose stream works
+✅ frame/pose sync works
+✅ multi-frame PLY fusion works
+⚠️ scale/alignment/filtering is still missing
+```
