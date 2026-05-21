@@ -788,15 +788,89 @@ Result:
 Current best visual result:
 - `outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply`
 
-Next:
-- Add scale/alignment diagnostics for SVO poses.
-- Estimate Sim(3) between SVO trajectory and DA3-inverted trajectory over the matched frame chunk.
-
-So the best-looking result so far proves that DA3’s own depth and pose are internally coherent when we invert its extrinsics. The next challenge is making the svo version approach the da3_inv version by aligning SVO poses to DA3’s pose/depth scale, likely with Sim(3)
+Follow-up completed on 21 May 2026:
+- Added scale/alignment diagnostics for SVO poses.
+- Estimated Sim(3) between SVO trajectory and DA3-inverted trajectory over the matched frame chunk.
+- Tested SVO Sim(3) per-frame fusion and DA3-inv chunk-level alignment.
 
 ## le 21 mai 2026
 
-- Created compare svo and da3 python script 
+### Current fusion decision: DA3 local chunks + SVO anchoring
+
+Visual comparison on EuRoC `V1_01_easy`, frames 22-37, showed:
+
+- `pcl_022_037_da3inv.ply` is still the best local reconstruction.
+- `pcl_022_037_svo.ply` is worse.
+- `pcl_022_037_svo_sim3_da3inv.ply` aligns SVO camera centers toward DA3-inv centers, but still does not match DA3-inv visual quality.
+- `pcl_022_037_da3inv_aligned_to_svo.ply` preserves the DA3-inv reconstruction quality while moving the whole finished chunk into the SVO trajectory frame.
+
+Conclusion:
+
+Use DA3 depth + DA3-inverted poses to build locally coherent reconstruction chunks. Use SVO for trajectory/world anchoring. Do not use SVO poses directly to place each DA3 depth map unless/until the SVO/DA3 pose convention and rotation mismatch are fully resolved.
+
+Current preferred pipeline:
+
+1. Build the chunk in the DA3-inverted frame:
+```bash
+python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply \
+  --start_frame 22 \
+  --end_frame 37 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+2. Align the finished DA3-inv chunk into the SVO frame:
+```bash
+python scripts/align_da3inv_ply_to_svo.py \
+  --input_ply outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply \
+  --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
+  --da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
+  --start_frame 22 \
+  --end_frame 37 \
+  --max_dt 0.20
+```
+
+The chunk-level alignment estimates:
+```text
+SVO centers ~= scale * R * DA3_inv_centers + t
+```
+
+V1_01_easy frames 22-37 result:
+```text
+scale: 1.119350852
+center alignment rmse: 0.070743933
+median: 0.051226038
+max: 0.137270800
+points: 72576
+```
+
+This is different from forcing SVO into the per-frame depth fusion. The winning approach is:
+
+```text
+DA3:
+  build coherent local point-cloud chunks
+  using DA3 depth + DA3-inverted poses
+
+SVO:
+  estimate camera trajectory over time
+  provide world/trajectory anchoring
+
+Fusion/alignment:
+  align finished DA3 chunks to SVO trajectory afterward
+```
+
+### Center alignment diagnostic
+
+Created `scripts/compare_svo_da3_centers.py`.
+
+It:
 ```text
 loads SVO centers from the sync CSV
 loads DA3 extrinsics from results.npz
@@ -804,7 +878,8 @@ inverts DA3 extrinsics and extracts DA3 camera centers
 fits DA3_inv ~= scale * R * SVO + t with Umeyama
 prints path lengths, scale, rotation, translation, and alignment error
 ```
-- ran with:
+
+Ran with:
 ```bash
 python scripts/compare_svo_da3_centers.py \
   --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
@@ -813,7 +888,8 @@ python scripts/compare_svo_da3_centers.py \
   --end_frame 37 \
   --max_dt 0.20
 ```
--key results:
+
+Key results:
 ```text
 SVO path length:          0.919503047
 DA3 inverted path length: 0.778154457
@@ -823,7 +899,7 @@ RMSE:                    0.060198660
 max error:               0.123495918
 ```
 
-- fitting SIM 3 showed that the original da3 with inv produces the best results:
+Fitting Sim(3) and visually comparing the PLY files showed:
 ```text
 DA3 depth + DA3-inverted poses = best local 3D reconstruction
 
@@ -831,29 +907,3 @@ SVO poses = useful independent trajectory estimate
 
 SVO poses forced into DA3 map = currently worse reconstruction
 ```
-
-- instead of making SVO directly place every DA3 depth map, we can separate responsibilities:
-
-```text
-DA3:
-  build coherent dense/semi-dense local point-cloud chunks
-  using DA3 depth + DA3-inverted poses
-
-SVO:
-  estimate camera trajectory over time
-  provide metric-ish motion, timing, tracking status, maybe online pose continuity
-
-Fusion/alignment:
-  align DA3 chunks or DA3 trajectory to SVO trajectory afterward
-```
-1. DA3 reconstructs chunk in DA3 frame.
-2. SVO estimates trajectory for the same frames.
-3. Estimate Sim(3) or scale+pose alignment between DA3 camera centers and SVO centers.
-4. Transform the whole DA3 point cloud chunk into the SVO/world frame.
-
-Online/offline prototype:
-  DA3 produces local 3D chunks with DA3 poses.
-  SVO produces trajectory.
-  A Sim(3) alignment attaches each DA3 chunk to the SVO trajectory/world frame.
-
-  

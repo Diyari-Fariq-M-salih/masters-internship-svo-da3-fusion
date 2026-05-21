@@ -201,6 +201,7 @@ def choose_pose_matrix(args, row, E_all, depth_idx, T_svo_to_da3_inv):
     if args.pose_source == "svo_sim3_da3inv":
         if T_svo_to_da3_inv is None:
             raise RuntimeError("SVO to DA3-inverted Sim(3) was not estimated.")
+        # Diagnostic mode only: visually worse than DA3-inv chunk alignment so far.
         return (T_svo_to_da3_inv @ pose_to_matrix(row)).astype(np.float32)
 
     if args.pose_source == "da3":
@@ -237,7 +238,11 @@ def main():
         "--pose_source",
         choices=["svo", "svo_sim3_da3inv", "da3", "da3_inv", "identity"],
         default="svo",
-        help="Pose source used to place each DA3 depth map into the output cloud.",
+        help=(
+            "Pose source used to place each DA3 depth map into the output cloud. "
+            "svo_sim3_da3inv is experimental; the preferred pipeline is "
+            "da3_inv followed by align_da3inv_ply_to_svo.py."
+        ),
     )
     args = parser.parse_args()
 
