@@ -1266,3 +1266,417 @@ Try a global alignment strategy or overlapping-chunk alignment before merging:
 2. Apply that shared transform to all DA3-inv chunks.
 3. Re-merge and compare against the current per-chunk-Sim(3) merge.
 ```
+
+### Supervisor recommendation: overlapping chunks from SVO trajectory
+
+Supervisor recommendation:
+```text
+Use SVO to create/select the trajectory and keyframes.
+Then create DA3 chunks around those keyframes with overlapping frames.
+Use the overlap frames to estimate where neighboring chunks should merge.
+Alternatively, split the SVO trajectory into equal motion-length segments and
+create DA3 reconstructions from those trajectory-based windows.
+```
+
+Reason:
+```text
+The previous non-overlapping chunks were each locally coherent, but the raw
+merged map failed because each chunk used an independent Sim(3) alignment.
+Overlapping chunks provide shared frames/geometry between neighboring DA3 runs,
+which can be used to estimate chunk-to-chunk alignment before global merging.
+```
+
+First overlap experiment:
+```text
+chunk A: 22-37, already exists
+chunk B: 30-45, new overlapping chunk
+overlap: 30-37
+```
+
+Prepared DA3 input folder:
+```text
+outputs/euroc_v1_01/cam0_rgb_030_045/
+16 images: frame_000030.png through frame_000045.png
+```
+
+Initial DA3 command at process resolution 504 hit CUDA OOM, so the overlap
+diagnostic was run at process resolution 448:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_030_045 \
+  --export-dir outputs/euroc_v1_01/da3_030_045_r448 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 448 \
+  --auto-cleanup
+```
+
+DA3 output:
+```text
+outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz
+depth:      (16, 280, 448)
+conf:       (16, 280, 448)
+extrinsics: (16, 3, 4)
+intrinsics: (16, 3, 3)
+```
+
+Built the overlap chunk:
+```bash
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_030_045.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply \
+  --start_frame 30 \
+  --end_frame 45 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+Output:
+```text
+outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply
+16 synchronized frames
+3,525 points per frame
+56,400 total points
+```
+
+Estimated chunk-to-chunk Sim(3) using overlap frames 30-37:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv_aligned_to_022_037_overlap.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
+  --source_start_frame 30 \
+  --target_start_frame 22 \
+  --overlap_start_frame 30 \
+  --overlap_end_frame 37 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv_aligned_to_022_037_overlap_report.json
+```
+
+Overlap alignment result:
+```text
+scale: 1.018218831
+center alignment rmse: 0.017975386
+median: 0.014775559
+mean: 0.016396625
+max: 0.033323237
+points: 56,400
+```
+
+Merged only the two overlapping chunks as a diagnostic:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_022_045_da3inv_overlap_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv_aligned_to_022_037_overlap.ply
+```
+
+Diagnostic output:
+```text
+outputs/euroc_v1_01/fusion/pcl_022_045_da3inv_overlap_merged.ply
+22-37 target chunk: 72,576 points
+30-45 aligned source chunk: 56,400 points
+Total: 128,976 points
+```
+
+Next visual check:
+```text
+Open outputs/euroc_v1_01/fusion/pcl_022_045_da3inv_overlap_merged.ply
+and check whether the overlap region 30-37 is coherent.
+```
+
+Visual result:
+```text
+outputs/euroc_v1_01/fusion/pcl_022_045_da3inv_overlap_merged.ply
+looks much better than the previous raw concatenation of independently
+SVO-aligned chunks. A few features appear lost or weaker, likely because the
+new overlap chunk was run at lower process resolution 448 after the 504 run hit
+CUDA OOM. Despite that, the spatial alignment is much more coherent.
+```
+
+Interpretation:
+```text
+Overlapping chunks are a promising direction.
+The overlap-frame Sim(3) between DA3 chunk coordinate systems is more stable
+than independently aligning every chunk to SVO and concatenating.
+Next, repeat the overlap strategy for more neighboring windows, preferably at
+process resolution 504 when GPU memory allows, or keep 448 for diagnostics.
+```
+
+### Second overlap pair: 30-45 and 38-53
+
+Tested the next neighboring overlap:
+```text
+target chunk: 30-45, r448
+source chunk: 38-53, original 504
+overlap: 38-45
+```
+
+Estimated chunk-to-chunk Sim(3):
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz \
+  --source_start_frame 38 \
+  --target_start_frame 30 \
+  --overlap_start_frame 38 \
+  --overlap_end_frame 45 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_report.json
+```
+
+Overlap alignment result:
+```text
+scale: 1.060842746
+center alignment rmse: 0.016028364
+median: 0.013522100
+mean: 0.014874990
+max: 0.024717956
+points: 72,576
+```
+
+Merged only the second overlapping pair as a diagnostic:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap.ply
+```
+
+Diagnostic output:
+```text
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply
+30-45 target chunk: 56,400 points
+38-53 aligned source chunk: 72,576 points
+Total: 128,976 points
+```
+
+Next visual check:
+```text
+Open outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply
+and check whether overlap frames 38-45 are coherent.
+```
+
+Visual result:
+```text
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply
+looks visibly rotated/misaligned even though center RMSE is low.
+This suggests center-only Sim(3) can be underconstrained for short overlap
+windows: camera centers can align while camera/world orientation and dense
+surfaces still disagree.
+```
+
+### Orientation-constrained overlap alignment diagnostic
+
+Updated `scripts/align_da3_overlap_ply.py` with:
+```text
+--rotation_mode centers       # previous behavior, full Sim(3) from centers
+--rotation_mode orientations  # estimate rotation from DA3-inv camera rotations,
+                              # then estimate scale/translation from centers
+--rotation_mode hybrid        # estimate rotation from both normalized center
+                              # motion and DA3-inv camera orientations, then
+                              # estimate scale/translation from centers
+```
+
+Rationale:
+```text
+For overlap frames, DA3 provides both camera centers and camera orientations.
+Instead of letting a short camera-center trajectory choose the rotation freely,
+we can estimate R_align from overlapping DA3-inv camera orientations:
+
+target_R_i ~= R_align @ source_R_i
+
+Then scale and translation are fit from the camera centers using that fixed
+rotation.
+```
+
+Reran the problematic pair with orientation-constrained rotation:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_orient.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz \
+  --source_start_frame 38 \
+  --target_start_frame 30 \
+  --overlap_start_frame 38 \
+  --overlap_end_frame 45 \
+  --rotation_mode orientations \
+  --report_json outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_orient_report.json
+```
+
+Orientation-constrained result:
+```text
+scale: 1.059865877
+center alignment rmse: 0.018349295
+median center error: 0.016426594
+max center error: 0.025937289
+
+rotation rmse: 1.504206884 deg
+median rotation error: 1.165625462 deg
+max rotation error: 2.901086922 deg
+points: 72,576
+```
+
+Merged orientation-constrained pair:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_orient_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_orient.ply
+```
+
+Next visual comparison:
+```text
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_orient_merged.ply
+```
+
+### Hybrid pose overlap alignment diagnostic
+
+Added hybrid rotation mode to use both overlap camera centers and camera
+orientations:
+```text
+camera centers constrain translation/scale and motion direction
+camera orientations constrain the rotation gauge
+```
+
+Tested `38-53 -> 30-45` with hybrid mode:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_hybrid_w1.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_030_045_r448/exports/mini_npz/results.npz \
+  --source_start_frame 38 \
+  --target_start_frame 30 \
+  --overlap_start_frame 38 \
+  --overlap_end_frame 45 \
+  --rotation_mode hybrid \
+  --orientation_weight 1.0 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_hybrid_w1_report.json
+```
+
+Hybrid result:
+```text
+scale: 1.060141389
+center alignment rmse: 0.017725714
+median center error: 0.015568945
+max center error: 0.025186463
+
+rotation rmse: 1.613789171 deg
+median rotation error: 1.063680598 deg
+max rotation error: 3.161348191 deg
+points: 72,576
+```
+
+Merged hybrid pair:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_hybrid_w1_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_030_045_r448_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_030_045_overlap_hybrid_w1.ply
+```
+
+Next visual comparison:
+```text
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_merged.ply
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_orient_merged.ply
+outputs/euroc_v1_01/fusion/pcl_030_053_da3inv_overlap_hybrid_w1_merged.ply
+```
+
+### Next overlap diagnostic: 46-61 -> 38-53
+
+To check whether the bad `38-53 -> 30-45` overlap merge is local to that pair
+or repeatable, generated the next overlapping DA3 chunk:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_046_061 \
+  --export-dir outputs/euroc_v1_01/da3_046_061 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+DA3 succeeded at full `504` process resolution:
+```text
+frames: 46-61
+images: 16
+depth shape: 322 x 504
+export: outputs/euroc_v1_01/da3_046_061/exports/mini_npz/results.npz
+```
+
+Built the local DA3-inverted reconstruction:
+```bash
+python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_046_061/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_046_061.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_046_061_da3inv.ply \
+  --start_frame 46 \
+  --end_frame 61 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+Output:
+```text
+outputs/euroc_v1_01/fusion/pcl_046_061_da3inv.ply
+points: 72,576
+```
+
+Aligned source `46-61` into target `38-53` using overlap frames `46-53`:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_046_061/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --source_start_frame 46 \
+  --target_start_frame 38 \
+  --overlap_start_frame 46 \
+  --overlap_end_frame 53 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap_report.json
+```
+
+Center-only overlap result:
+```text
+scale: 1.128511042
+center alignment rmse: 0.020200962
+median center error: 0.019882278
+max center error: 0.026823371
+
+rotation rmse: 8.897612971 deg
+median rotation error: 8.659081888 deg
+max rotation error: 10.164186260 deg
+points: 72,576
+```
+
+Merged diagnostic pair:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap.ply
+```
+
+Visual check target:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_merged.ply
+```
+
+Interpretation so far:
+```text
+Low overlap center RMSE is not sufficient for a visually correct merge.
+For 46-61 -> 38-53, the centers align tightly but the DA3-inverted camera
+orientations disagree by roughly 9 degrees across the same overlap.
+This supports the suspicion that each DA3 chunk has its own local pose gauge,
+and overlap merging needs an orientation/geometry-aware constraint rather than
+camera-center Sim(3) alone.
+```
