@@ -791,3 +791,34 @@ Current best visual result:
 Next:
 - Add scale/alignment diagnostics for SVO poses.
 - Estimate Sim(3) between SVO trajectory and DA3-inverted trajectory over the matched frame chunk.
+
+So the best-looking result so far proves that DA3’s own depth and pose are internally coherent when we invert its extrinsics. The next challenge is making the svo version approach the da3_inv version by aligning SVO poses to DA3’s pose/depth scale, likely with Sim(3)
+
+## le 21 mai 2026
+
+- Created compare svo and da3 python script 
+```text
+loads SVO centers from the sync CSV
+loads DA3 extrinsics from results.npz
+inverts DA3 extrinsics and extracts DA3 camera centers
+fits DA3_inv ~= scale * R * SVO + t with Umeyama
+prints path lengths, scale, rotation, translation, and alignment error
+```
+- ran with:
+```bash
+python scripts/compare_svo_da3_centers.py \
+  --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
+  --da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
+  --start_frame 22 \
+  --end_frame 37 \
+  --max_dt 0.20
+```
+-key results:
+```text
+SVO path length:          0.919503047
+DA3 inverted path length: 0.778154457
+DA3/SVO ratio:           0.846277193
+Sim(3) scale:            0.810515800
+RMSE:                    0.060198660
+max error:               0.123495918
+```
