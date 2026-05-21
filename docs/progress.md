@@ -908,3 +908,100 @@ SVO poses = useful independent trajectory estimate
 
 SVO poses forced into DA3 map = currently worse reconstruction
 ```
+
+### Second aligned chunk: frames 38-53
+
+After fixing the NVIDIA driver/library mismatch, CUDA worked again in the `da3` env:
+```text
+Torch: 2.3.1+cu121
+Torch CUDA build: 12.1
+CUDA available: True
+Device count: 1
+GPU: NVIDIA GeForce RTX 4070
+```
+
+Ran DA3 on the next 16-frame chunk:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_038_053 \
+  --export-dir outputs/euroc_v1_01/da3_038_053 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+DA3 output:
+```text
+outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz
+depth:      (16, 322, 504)
+conf:       (16, 322, 504)
+extrinsics: (16, 3, 4)
+intrinsics: (16, 3, 3)
+```
+
+Created sync CSV for frames through 53:
+```bash
+python scripts/sync_frames_to_svo.py \
+  --frames_csv outputs/euroc_v1_01/cam0_timestamps.csv \
+  --svo_tum outputs/svo_v1_01_clean/svo_pose_cam_tum.txt \
+  --output outputs/euroc_v1_01/sync_038_053.csv \
+  --max_frames 54 \
+  --max_dt 0.20
+```
+
+Frames 38-53 have exact sync:
+```text
+dt = 0.000000000 for frames 38-53
+```
+
+Built the DA3-inv local chunk:
+```bash
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_038_053.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --start_frame 38 \
+  --end_frame 53 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+Output:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply
+16 synchronized frames
+4,536 points per frame
+72,576 total points
+```
+
+Aligned the finished DA3-inv chunk into the SVO frame:
+```bash
+python scripts/align_da3inv_ply_to_svo.py \
+  --input_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo.ply \
+  --report_json outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo_report.json \
+  --sync_csv outputs/euroc_v1_01/sync_038_053.csv \
+  --da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --start_frame 38 \
+  --end_frame 53 \
+  --max_dt 0.20
+```
+
+Alignment result:
+```text
+scale: 0.950041474
+center alignment rmse: 0.046832859
+median: 0.032263243
+mean: 0.038980903
+max: 0.104224733
+points: 72576
+```
+
+Files to compare visually:
+```text
+outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply
+outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo.ply
+```
