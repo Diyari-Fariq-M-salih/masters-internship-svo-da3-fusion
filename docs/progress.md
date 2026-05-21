@@ -1201,3 +1201,68 @@ outputs/euroc_v1_01/fusion/pcl_054_069_da3inv_aligned_to_svo.ply
 outputs/euroc_v1_01/fusion/pcl_070_085_da3inv_aligned_to_svo.ply
 outputs/euroc_v1_01/fusion/pcl_086_099_da3inv_aligned_to_svo.ply
 ```
+
+### Merged V1_01_easy DA3-inv + SVO reconstruction
+
+Added `scripts/merge_ascii_ply.py` to concatenate generated ASCII PLY files.
+
+Merged the five SVO-aligned DA3-inv chunks:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_022_099_da3inv_aligned_to_svo_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo.ply \
+  outputs/euroc_v1_01/fusion/pcl_054_069_da3inv_aligned_to_svo.ply \
+  outputs/euroc_v1_01/fusion/pcl_070_085_da3inv_aligned_to_svo.ply \
+  outputs/euroc_v1_01/fusion/pcl_086_099_da3inv_aligned_to_svo.ply
+```
+
+Result:
+```text
+outputs/euroc_v1_01/fusion/pcl_022_099_da3inv_aligned_to_svo_merged.ply
+
+Loaded chunks:
+22-37: 72,576 points
+38-53: 72,576 points
+54-69: 72,576 points
+70-85: 72,576 points
+86-99: 63,504 points
+
+Total: 353,808 points
+```
+
+### Visual inspection screenshots
+
+Saved visual inspection screenshots under:
+```text
+outputs/visual outputs/
+```
+
+Screenshots:
+```text
+outputs/visual outputs/pcl_022_037_da3inv_aligned_to_svo.png
+outputs/visual outputs/pcl_038_053_da3inv_aligned_to_svo.png
+outputs/visual outputs/pcl_054_069_da3inv_aligned_to_svo.png
+outputs/visual outputs/pcl_070_085_da3inv_aligned_to_svo.png
+outputs/visual outputs/pcl_086_099_da3inv_aligned_to_svo.png
+outputs/visual outputs/pcl_022_099_da3inv_aligned_to_svo.png
+```
+
+Visual reading:
+```text
+The five individual SVO-aligned chunks look locally coherent.
+The simple concatenated merged cloud is not good enough as a final map.
+The failure is likely from independent per-chunk Sim(3) alignments:
+each chunk is adjusted into SVO coordinates, but each uses its own scale,
+rotation, and translation, so the chunks are not mutually consistent enough
+for raw concatenation.
+```
+
+Next fusion direction:
+```text
+Do not treat the raw merged PLY as final.
+Try a global alignment strategy or overlapping-chunk alignment before merging:
+1. Estimate one shared Sim(3) over all DA3-inv camera centers and SVO centers.
+2. Apply that shared transform to all DA3-inv chunks.
+3. Re-merge and compare against the current per-chunk-Sim(3) merge.
+```
