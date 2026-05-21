@@ -58,6 +58,77 @@ def da3_extrinsics_to_matrix(E):
     return T
 
 
+def estimate_sim3_umeyama(source, target):
+    """
+    Estimate target ~= scale * rotation @ source + translation.
+    """
+    if source.shape != target.shape:
+        raise ValueError(f"Shape mismatch: source {source.shape}, target {target.shape}")
+    if source.ndim != 2 or source.shape[1] != 3:
+        raise ValueError(f"Expected Nx3 point arrays, got {source.shape}")
+    if source.shape[0] < 3:
+        raise ValueError("At least 3 matched centers are required for Sim(3).")
+
+    mu_source = source.mean(axis=0)
+    mu_target = target.mean(axis=0)
+    X = source - mu_source
+    Y = target - mu_target
+
+    cov = (Y.T @ X) / source.shape[0]
+    U, singular_values, Vt = np.linalg.svd(cov)
+
+    sign = np.eye(3)
+    if np.linalg.det(U @ Vt) < 0:
+        sign[-1, -1] = -1.0
+
+    rotation = U @ sign @ Vt
+    source_variance = np.mean(np.sum(X * X, axis=1))
+    if source_variance <= 0:
+        raise ValueError("Source centers have zero variance; cannot estimate scale.")
+
+    scale = float(np.trace(np.diag(singular_values) @ sign) / source_variance)
+    translation = mu_target - scale * rotation @ mu_source
+
+    aligned = scale * (rotation @ source.T).T + translation
+    errors = np.linalg.norm(aligned - target, axis=1)
+
+    return scale, rotation, translation, errors
+
+
+def estimate_svo_to_da3_inv_sim3(rows, E_all, start_frame):
+    if E_all is None:
+        raise KeyError("DA3 npz does not contain 'extrinsics'.")
+
+    svo_centers = []
+    da3_inv_centers = []
+
+    for row in rows:
+        frame_id = int(row["frame_id"])
+        depth_idx = frame_id - start_frame
+        if depth_idx < 0 or depth_idx >= E_all.shape[0]:
+            raise IndexError(
+                f"Frame {frame_id} maps to DA3 depth index {depth_idx}, "
+                f"but extrinsics array has shape {E_all.shape}."
+            )
+
+        svo_centers.append([float(row["tx"]), float(row["ty"]), float(row["tz"])])
+
+        T_da3 = da3_extrinsics_to_matrix(E_all[depth_idx])
+        T_da3_inv = np.linalg.inv(T_da3)
+        da3_inv_centers.append(T_da3_inv[:3, 3])
+
+    scale, rotation, translation, errors = estimate_sim3_umeyama(
+        np.array(svo_centers, dtype=np.float64),
+        np.array(da3_inv_centers, dtype=np.float64),
+    )
+
+    T_sim3 = np.eye(4, dtype=np.float32)
+    T_sim3[:3, :3] = (scale * rotation).astype(np.float32)
+    T_sim3[:3, 3] = translation.astype(np.float32)
+
+    return T_sim3, scale, rotation, translation, errors
+
+
 def backproject_frame(rgb_bgr, depth, K, T_w_c, stride, max_depth):
     h, w = depth.shape
 
@@ -123,15 +194,20 @@ def save_ply(path, points, colors):
             )
 
 
-def choose_pose_matrix(args, row, E_all, depth_idx):
+def choose_pose_matrix(args, row, E_all, depth_idx, T_svo_to_da3_inv):
     if args.pose_source == "svo":
         return pose_to_matrix(row)
+
+    if args.pose_source == "svo_sim3_da3inv":
+        if T_svo_to_da3_inv is None:
+            raise RuntimeError("SVO to DA3-inverted Sim(3) was not estimated.")
+        return (T_svo_to_da3_inv @ pose_to_matrix(row)).astype(np.float32)
 
     if args.pose_source == "da3":
         if E_all is None:
             raise KeyError("DA3 npz does not contain 'extrinsics'.")
         return da3_extrinsics_to_matrix(E_all[depth_idx])
-    
+
     if args.pose_source == "da3_inv":
         if E_all is None:
             raise KeyError("DA3 npz does not contain 'extrinsics'.")
@@ -159,7 +235,7 @@ def main():
     parser.add_argument("--max_depth", type=float, default=None)
     parser.add_argument(
         "--pose_source",
-        choices=["svo", "da3", "da3_inv", "identity"],
+        choices=["svo", "svo_sim3_da3inv", "da3", "da3_inv", "identity"],
         default="svo",
         help="Pose source used to place each DA3 depth map into the output cloud.",
     )
@@ -191,6 +267,34 @@ def main():
     if E_all is not None:
         print(f"DA3 extrinsics shape: {E_all.shape}")
 
+    T_svo_to_da3_inv = None
+    if args.pose_source == "svo_sim3_da3inv":
+        (
+            T_svo_to_da3_inv,
+            sim3_scale,
+            sim3_rotation,
+            sim3_translation,
+            sim3_errors,
+        ) = estimate_svo_to_da3_inv_sim3(rows, E_all, args.start_frame)
+
+        print("Estimated Sim(3), SVO -> DA3-inverted:")
+        print(f"  scale: {sim3_scale:.9f}")
+        print("  rotation:")
+        for r in sim3_rotation:
+            print(f"    {r[0]: .9f} {r[1]: .9f} {r[2]: .9f}")
+        print(
+            "  translation: "
+            f"{sim3_translation[0]: .9f} "
+            f"{sim3_translation[1]: .9f} "
+            f"{sim3_translation[2]: .9f}"
+        )
+        print(
+            "  center alignment error: "
+            f"rmse={np.sqrt(np.mean(sim3_errors * sim3_errors)):.9f}, "
+            f"median={np.median(sim3_errors):.9f}, "
+            f"max={np.max(sim3_errors):.9f}"
+        )
+
     all_points = []
     all_colors = []
 
@@ -216,7 +320,13 @@ def main():
 
         depth = depth_all[depth_idx]
         K = K_all[depth_idx]
-        T_w_c = choose_pose_matrix(args, row, E_all, depth_idx)
+        T_w_c = choose_pose_matrix(
+            args,
+            row,
+            E_all,
+            depth_idx,
+            T_svo_to_da3_inv,
+        )
 
         pts, cols = backproject_frame(
             rgb_bgr=rgb,

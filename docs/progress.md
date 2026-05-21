@@ -822,3 +822,38 @@ Sim(3) scale:            0.810515800
 RMSE:                    0.060198660
 max error:               0.123495918
 ```
+
+- fitting SIM 3 showed that the original da3 with inv produces the best results:
+```text
+DA3 depth + DA3-inverted poses = best local 3D reconstruction
+
+SVO poses = useful independent trajectory estimate
+
+SVO poses forced into DA3 map = currently worse reconstruction
+```
+
+- instead of making SVO directly place every DA3 depth map, we can separate responsibilities:
+
+```text
+DA3:
+  build coherent dense/semi-dense local point-cloud chunks
+  using DA3 depth + DA3-inverted poses
+
+SVO:
+  estimate camera trajectory over time
+  provide metric-ish motion, timing, tracking status, maybe online pose continuity
+
+Fusion/alignment:
+  align DA3 chunks or DA3 trajectory to SVO trajectory afterward
+```
+1. DA3 reconstructs chunk in DA3 frame.
+2. SVO estimates trajectory for the same frames.
+3. Estimate Sim(3) or scale+pose alignment between DA3 camera centers and SVO centers.
+4. Transform the whole DA3 point cloud chunk into the SVO/world frame.
+
+Online/offline prototype:
+  DA3 produces local 3D chunks with DA3 poses.
+  SVO produces trajectory.
+  A Sim(3) alignment attaches each DA3 chunk to the SVO trajectory/world frame.
+
+  
