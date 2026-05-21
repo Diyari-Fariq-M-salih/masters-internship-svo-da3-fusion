@@ -12,6 +12,7 @@ This preserves DA3's depth/pose consistency while anchoring the chunk to SVO.
 
 import argparse
 import csv
+import json
 from pathlib import Path
 
 import numpy as np
@@ -168,6 +169,46 @@ def save_ascii_ply(path, points, colors):
             )
 
 
+def save_report(
+    path,
+    args,
+    scale,
+    rotation,
+    translation,
+    errors,
+    point_count,
+):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    report = {
+        "input_ply": str(args.input_ply),
+        "output_ply": str(args.output_ply),
+        "sync_csv": str(args.sync_csv),
+        "da3_npz": str(args.da3_npz),
+        "start_frame": args.start_frame,
+        "end_frame": args.end_frame,
+        "max_dt": args.max_dt,
+        "transform": {
+            "convention": "svo_center = scale * rotation @ da3_inv_center + translation",
+            "scale": scale,
+            "rotation": rotation.tolist(),
+            "translation": translation.tolist(),
+        },
+        "alignment_error": {
+            "rmse": float(np.sqrt(np.mean(errors * errors))),
+            "median": float(np.median(errors)),
+            "mean": float(np.mean(errors)),
+            "max": float(np.max(errors)),
+        },
+        "point_count": int(point_count),
+    }
+
+    with path.open("w") as f:
+        json.dump(report, f, indent=2)
+        f.write("\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -182,6 +223,11 @@ def main():
     parser.add_argument("--start_frame", type=int, required=True)
     parser.add_argument("--end_frame", type=int, required=True)
     parser.add_argument("--max_dt", type=float, default=0.20)
+    parser.add_argument(
+        "--report_json",
+        default=None,
+        help="Optional path for a JSON report with the estimated Sim(3) and errors.",
+    )
     args = parser.parse_args()
 
     da3_centers, svo_centers = load_centers(
@@ -199,6 +245,16 @@ def main():
     _, points, colors = load_ascii_ply(args.input_ply)
     aligned_points = scale * (rotation @ points.T).T + translation
     save_ascii_ply(args.output_ply, aligned_points, colors)
+    if args.report_json is not None:
+        save_report(
+            args.report_json,
+            args,
+            scale,
+            rotation,
+            translation,
+            errors,
+            points.shape[0],
+        )
 
     print("Estimated Sim(3), DA3-inverted -> SVO:")
     print(f"  scale: {scale:.9f}")
@@ -217,6 +273,8 @@ def main():
     )
     print(f"Transformed points: {points.shape[0]}")
     print(f"Saved: {args.output_ply}")
+    if args.report_json is not None:
+        print(f"Saved report: {args.report_json}")
 
 
 if __name__ == "__main__":

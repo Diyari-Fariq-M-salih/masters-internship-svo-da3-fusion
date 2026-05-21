@@ -830,6 +830,7 @@ python scripts/make_pcl_chunk_from_da3_npz.py \
 python scripts/align_da3inv_ply_to_svo.py \
   --input_ply outputs/euroc_v1_01/fusion/pcl_022_037_da3inv.ply \
   --output_ply outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply \
+  --report_json outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo_report.json \
   --sync_csv outputs/euroc_v1_01/sync_022_037.csv \
   --da3_npz outputs/euroc_v1_01/da3_022_037/exports/mini_npz/results.npz \
   --start_frame 22 \
