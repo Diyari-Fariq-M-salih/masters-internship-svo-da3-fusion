@@ -1680,3 +1680,458 @@ This supports the suspicion that each DA3 chunk has its own local pose gauge,
 and overlap merging needs an orientation/geometry-aware constraint rather than
 camera-center Sim(3) alone.
 ```
+
+### Overlap-only geometry ICP diagnostic
+
+Added a lightweight diagnostic script:
+```text
+scripts/refine_da3_overlap_icp.py
+```
+
+Purpose:
+```text
+Initialize source -> target from overlap camera-center Sim(3), then build
+overlap-only point clouds directly from the two DA3 NPZ files and refine the
+alignment with nearest-neighbor point-to-point Sim(3) ICP.
+```
+
+Important caveat:
+```text
+This is only a diagnostic. The overlap geometry has repeated planes and sparse
+walls, so unconstrained nearest-neighbor ICP can drift toward wrong planar
+matches even when the nearest-neighbor error decreases.
+```
+
+Tested bad overlap pair `46-61 -> 38-53`, overlap `46-53`:
+```bash
+python scripts/refine_da3_overlap_icp.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv.ply \
+  --target_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap_icp.ply \
+  --merged_output_ply outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_icp_merged.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_046_061/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --source_start_frame 46 \
+  --target_start_frame 38 \
+  --overlap_start_frame 46 \
+  --overlap_end_frame 53 \
+  --stride 8 \
+  --max_depth 10 \
+  --icp_iterations 20 \
+  --max_corr 0.08 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap_icp_report.json
+```
+
+20-iteration ICP result:
+```text
+overlap points: source=20,664 target=20,664
+initial scale: 1.128511042
+refined scale: 1.097454155
+final overlap nearest-neighbor rmse: 0.040088950
+median: 0.030002105
+max: 0.079983544
+correspondences within 0.08: 5,768
+```
+
+Also tested a short 4-iteration version because the ICP history improved early,
+then began drifting:
+```bash
+python scripts/refine_da3_overlap_icp.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv.ply \
+  --target_ply outputs/euroc_v1_01/fusion/pcl_038_053_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap_icp4.ply \
+  --merged_output_ply outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_icp4_merged.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_046_061/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_053/exports/mini_npz/results.npz \
+  --source_start_frame 46 \
+  --target_start_frame 38 \
+  --overlap_start_frame 46 \
+  --overlap_end_frame 53 \
+  --stride 8 \
+  --max_depth 10 \
+  --icp_iterations 4 \
+  --max_corr 0.08 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_046_061_da3inv_aligned_to_038_053_overlap_icp4_report.json
+```
+
+4-iteration ICP result:
+```text
+overlap points: source=20,664 target=20,664
+initial scale: 1.128511042
+refined scale: 1.136395430
+final overlap nearest-neighbor rmse: 0.038621939
+median: 0.029367544
+max: 0.079981728
+correspondences within 0.08: 3,851
+```
+
+Visual comparison targets:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_merged.ply
+outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_icp_merged.ply
+outputs/euroc_v1_01/fusion/pcl_038_061_da3inv_overlap_icp4_merged.ply
+```
+
+Interpretation:
+```text
+Geometry ICP can reduce local nearest-neighbor distances, but the low inlier
+count and scale drift suggest this is not yet a reliable merge method. The next
+refinement should constrain ICP more strongly, for example by using only stable
+overlap frames/regions, adding color/feature constraints, or optimizing against
+matched overlap frame surfaces instead of one pooled nearest-neighbor cloud.
+```
+
+### Smaller chunk / heavier overlap test
+
+Hypothesis:
+```text
+Using shorter DA3 chunks with more overlap may reduce chunk-to-chunk gauge
+differences. Instead of 16-frame chunks with 8-frame overlap, test 9-frame
+chunks with 6-frame overlap near the bad region.
+```
+
+Test pair:
+```text
+target chunk: 38-46
+source chunk: 41-49
+overlap: 41-46
+chunk length: 9 frames
+overlap length: 6 frames
+overlap ratio: 67%
+```
+
+Prepared image folders:
+```text
+outputs/euroc_v1_01/cam0_rgb_038_046
+outputs/euroc_v1_01/cam0_rgb_041_049
+```
+
+Generated DA3 mini NPZ exports at full `504` process resolution:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_038_046 \
+  --export-dir outputs/euroc_v1_01/da3_038_046 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+
+da3 images outputs/euroc_v1_01/cam0_rgb_041_049 \
+  --export-dir outputs/euroc_v1_01/da3_041_049 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+Both DA3 runs succeeded:
+```text
+images per chunk: 9
+depth shape: 322 x 504
+export format: mini_npz
+```
+
+Built DA3-inverted local chunks:
+```bash
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_038_046.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_038_046_da3inv.ply \
+  --start_frame 38 \
+  --end_frame 46 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_041_049/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_041_049.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_041_049_da3inv.ply \
+  --start_frame 41 \
+  --end_frame 49 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+Outputs:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_046_da3inv.ply
+points: 40,824
+
+outputs/euroc_v1_01/fusion/pcl_041_049_da3inv.ply
+points: 40,824
+```
+
+Aligned source `41-49` into target `38-46` using overlap frames `41-46`:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_041_049_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_041_049/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --source_start_frame 41 \
+  --target_start_frame 38 \
+  --overlap_start_frame 41 \
+  --overlap_end_frame 46 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap_report.json
+```
+
+Center-only Sim(3) result:
+```text
+scale: 0.943515259
+center alignment rmse: 0.014392858
+median center error: 0.012496073
+max center error: 0.023326947
+
+rotation rmse: 1.491379520 deg
+median rotation error: 1.427345887 deg
+max rotation error: 1.777885332 deg
+points: 40,824
+```
+
+Merged visual diagnostic:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_046_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap.ply
+```
+
+Visual check target:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+```
+
+Initial interpretation:
+```text
+This smaller/heavier-overlap pair is numerically much healthier than the bad
+46-61 -> 38-53 pair. The orientation disagreement dropped from roughly 9 deg
+to roughly 1.5 deg. The visual merged cloud will decide whether the improvement
+is enough to justify rebuilding the sequence with 9-frame chunks and 6-frame
+overlap.
+```
+
+### Scale-preserving 9-frame overlap test
+
+Visual inspection of the `38-49` 9-frame/6-overlap merge looked better, but
+showed a clear wall-height difference. Since the estimated Sim(3) scale was
+`0.943515259`, tested a scale-preserving variant.
+
+Updated `scripts/align_da3_overlap_ply.py` with:
+```text
+--scale_override
+```
+
+Behavior:
+```text
+Estimate rotation as before, then force the scale to the requested value and
+recompute translation from the overlap camera centers. Use `--scale_override 1.0`
+to test a no-scale-change merge.
+```
+
+Scale-fixed alignment:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_041_049_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap_scale1.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_041_049/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --source_start_frame 41 \
+  --target_start_frame 38 \
+  --overlap_start_frame 41 \
+  --overlap_end_frame 46 \
+  --scale_override 1.0 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap_scale1_report.json
+```
+
+Scale-fixed result:
+```text
+scale: 1.000000000
+center alignment rmse: 0.015938823
+median center error: 0.015336089
+max center error: 0.021680187
+
+rotation rmse: 1.491379520 deg
+median rotation error: 1.427345887 deg
+max rotation error: 1.777885332 deg
+points: 40,824
+```
+
+The center error increased only slightly compared with the estimated-scale
+result:
+```text
+estimated scale 0.943515259: center rmse 0.014392858
+forced scale    1.000000000: center rmse 0.015938823
+```
+
+Merged scale-fixed visual diagnostic:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_scale1_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_046_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_041_049_da3inv_aligned_to_038_046_overlap_scale1.ply
+```
+
+Visual comparison targets:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_scale1_merged.ply
+```
+
+Interpretation to check visually:
+```text
+If the scale-fixed merge reduces the wall-height mismatch, then the estimated
+Sim(3) scale was over-correcting. If it worsens, then DA3's adjacent 9-frame
+chunks really have a local scale difference and we need a constrained but not
+fully fixed scale model.
+```
+
+### 9-frame / 7-overlap test
+
+Since the scale-fixed `9f6o` merge looked worse, tested more overlap while
+keeping 9-frame chunks:
+```text
+target chunk: 38-46
+source chunk: 40-48
+overlap: 40-46
+chunk length: 9 frames
+overlap length: 7 frames
+overlap ratio: 78%
+```
+
+Prepared:
+```text
+outputs/euroc_v1_01/cam0_rgb_040_048
+outputs/euroc_v1_01/sync_040_048.csv
+```
+
+Generated DA3 at full `504` process resolution:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_040_048 \
+  --export-dir outputs/euroc_v1_01/da3_040_048 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+DA3 succeeded:
+```text
+images: 9
+depth shape: 322 x 504
+export: outputs/euroc_v1_01/da3_040_048/exports/mini_npz/results.npz
+```
+
+Built the local DA3-inverted chunk:
+```bash
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_040_048/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_040_048.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_040_048_da3inv.ply \
+  --start_frame 40 \
+  --end_frame 48 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+```
+
+Output:
+```text
+outputs/euroc_v1_01/fusion/pcl_040_048_da3inv.ply
+points: 40,824
+```
+
+Aligned source `40-48` into target `38-46` using overlap frames `40-46`:
+```bash
+python scripts/align_da3_overlap_ply.py \
+  --source_ply outputs/euroc_v1_01/fusion/pcl_040_048_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_040_048_da3inv_aligned_to_038_046_overlap.ply \
+  --source_da3_npz outputs/euroc_v1_01/da3_040_048/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --source_start_frame 40 \
+  --target_start_frame 38 \
+  --overlap_start_frame 40 \
+  --overlap_end_frame 46 \
+  --report_json outputs/euroc_v1_01/fusion/pcl_040_048_da3inv_aligned_to_038_046_overlap_report.json
+```
+
+Center-only Sim(3) result:
+```text
+scale: 0.947548344
+center alignment rmse: 0.018355146
+median center error: 0.009372649
+max center error: 0.034818015
+
+rotation rmse: 3.011830900 deg
+median rotation error: 2.906453151 deg
+max rotation error: 3.329079735 deg
+points: 40,824
+```
+
+Merged visual diagnostic:
+```bash
+python scripts/merge_ascii_ply.py \
+  --output outputs/euroc_v1_01/fusion/pcl_038_048_da3inv_overlap_9f7o_merged.ply \
+  outputs/euroc_v1_01/fusion/pcl_038_046_da3inv.ply \
+  outputs/euroc_v1_01/fusion/pcl_040_048_da3inv_aligned_to_038_046_overlap.ply
+```
+
+Visual comparison targets:
+```text
+outputs/euroc_v1_01/fusion/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+outputs/euroc_v1_01/fusion/pcl_038_048_da3inv_overlap_9f7o_merged.ply
+```
+
+Initial interpretation:
+```text
+More overlap did not automatically improve the DA3 chunk gauge. Compared with
+the 9f6o pair, scale stayed similar but orientation disagreement increased:
+
+9f6o 41-49 -> 38-46: scale 0.943515259, rotation rmse 1.491379520 deg
+9f7o 40-48 -> 38-46: scale 0.947548344, rotation rmse 3.011830900 deg
+
+This suggests the exact frame window and DA3 reference-view/context choice
+matter, not just overlap ratio.
+```
+
+### Fusion output cleanup
+
+Cleaned `outputs/euroc_v1_01/fusion` non-destructively by moving generated
+diagnostics into subfolders. No point clouds or reports were deleted.
+
+New organization:
+```text
+outputs/euroc_v1_01/fusion/README.md
+outputs/euroc_v1_01/fusion/00_legacy_pose_tests/
+outputs/euroc_v1_01/fusion/10_da3inv_local_chunks/
+outputs/euroc_v1_01/fusion/20_svo_aligned_chunks/
+outputs/euroc_v1_01/fusion/30_overlap_16f/
+outputs/euroc_v1_01/fusion/40_overlap_9f/
+```
+
+Current visual paths after cleanup:
+```text
+Best 9f6o candidate:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+
+Scale-fixed 9f6o variant, visually worse:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_scale1_merged.ply
+
+9f7o variant, visually worse:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_048_da3inv_overlap_9f7o_merged.ply
+
+Bad 16-frame overlap reference:
+outputs/euroc_v1_01/fusion/30_overlap_16f/pcl_038_061_da3inv_overlap_merged.ply
+```
+
+Note:
+```text
+Older progress entries may show the pre-cleanup flat `fusion/*.ply` paths.
+Those files now live under the categorized subfolders above.
+```

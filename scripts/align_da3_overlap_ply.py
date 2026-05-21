@@ -190,6 +190,23 @@ def estimate_scale_translation_with_fixed_rotation(source, target, rotation):
     return scale, translation, errors
 
 
+def estimate_translation_with_fixed_rotation_scale(source, target, rotation, scale):
+    """
+    Estimate target ~= scale * rotation @ source + translation with fixed
+    rotation and fixed scale.
+    """
+    if source.shape != target.shape:
+        raise ValueError(f"Shape mismatch: source {source.shape}, target {target.shape}")
+
+    mu_source = source.mean(axis=0)
+    mu_target = target.mean(axis=0)
+    translation = mu_target - scale * rotation @ mu_source
+    aligned = scale * (rotation @ source.T).T + translation
+    errors = np.linalg.norm(aligned - target, axis=1)
+
+    return translation, errors
+
+
 def rotation_errors_degrees(rotation, source_rotations, target_rotations):
     errors = []
     for source_R, target_R in zip(source_rotations, target_rotations):
@@ -280,6 +297,7 @@ def save_report(
         "overlap_end_frame": args.overlap_end_frame,
         "overlap_frame_ids": frame_ids.tolist(),
         "rotation_mode": args.rotation_mode,
+        "scale_override": args.scale_override,
         "transform": {
             "convention": "target_center = scale * rotation @ source_center + translation",
             "scale": scale,
@@ -336,6 +354,16 @@ def main():
         default=1.0,
         help="Orientation-axis weight used by --rotation_mode hybrid.",
     )
+    parser.add_argument(
+        "--scale_override",
+        type=float,
+        default=None,
+        help=(
+            "If set, replace the estimated Sim(3) scale with this value and "
+            "recompute translation from overlap camera centers. Use 1.0 to "
+            "test a scale-preserving merge."
+        ),
+    )
     parser.add_argument("--report_json", default=None)
     args = parser.parse_args()
 
@@ -383,6 +411,15 @@ def main():
             rotation,
         )
 
+    if args.scale_override is not None:
+        scale = float(args.scale_override)
+        translation, errors = estimate_translation_with_fixed_rotation_scale(
+            source_centers,
+            target_centers,
+            rotation,
+            scale,
+        )
+
     rotation_errors = rotation_errors_degrees(
         rotation,
         source_rotations,
@@ -409,6 +446,8 @@ def main():
     print("Estimated overlap Sim(3), source -> target:")
     print(f"  frames: {args.overlap_start_frame}-{args.overlap_end_frame}")
     print(f"  rotation_mode: {args.rotation_mode}")
+    if args.scale_override is not None:
+        print(f"  scale_override: {args.scale_override:.9f}")
     print(f"  scale: {scale:.9f}")
     print(
         "  center alignment error: "
