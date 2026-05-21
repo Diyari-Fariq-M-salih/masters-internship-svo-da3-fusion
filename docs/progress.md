@@ -1094,3 +1094,110 @@ outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply
 outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo.ply
 outputs/euroc_v1_01/fusion/pcl_054_069_da3inv_aligned_to_svo.ply
 ```
+
+### Fourth and fifth aligned chunks: frames 70-85 and 86-99
+
+Ran DA3 on the remaining chunks:
+```bash
+da3 images outputs/euroc_v1_01/cam0_rgb_070_085 \
+  --export-dir outputs/euroc_v1_01/da3_070_085 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+
+da3 images outputs/euroc_v1_01/cam0_rgb_086_099 \
+  --export-dir outputs/euroc_v1_01/da3_086_099 \
+  --export-format mini_npz \
+  --device cuda \
+  --process-res 504 \
+  --auto-cleanup
+```
+
+DA3 output:
+```text
+outputs/euroc_v1_01/da3_070_085/exports/mini_npz/results.npz
+depth:      (16, 322, 504)
+conf:       (16, 322, 504)
+extrinsics: (16, 3, 4)
+intrinsics: (16, 3, 3)
+
+outputs/euroc_v1_01/da3_086_099/exports/mini_npz/results.npz
+depth:      (14, 322, 504)
+conf:       (14, 322, 504)
+extrinsics: (14, 3, 4)
+intrinsics: (14, 3, 3)
+```
+
+Built and aligned the DA3-inv chunks:
+```bash
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_070_085/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_070_085.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_070_085_da3inv.ply \
+  --start_frame 70 \
+  --end_frame 85 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+
+python scripts/align_da3inv_ply_to_svo.py \
+  --input_ply outputs/euroc_v1_01/fusion/pcl_070_085_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_070_085_da3inv_aligned_to_svo.ply \
+  --report_json outputs/euroc_v1_01/fusion/pcl_070_085_da3inv_aligned_to_svo_report.json \
+  --sync_csv outputs/euroc_v1_01/sync_070_085.csv \
+  --da3_npz outputs/euroc_v1_01/da3_070_085/exports/mini_npz/results.npz \
+  --start_frame 70 \
+  --end_frame 85 \
+  --max_dt 0.20
+
+conda run -n da3 python scripts/make_pcl_chunk_from_da3_npz.py \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --da3_npz outputs/euroc_v1_01/da3_086_099/exports/mini_npz/results.npz \
+  --sync_csv outputs/euroc_v1_01/sync_086_099.csv \
+  --output outputs/euroc_v1_01/fusion/pcl_086_099_da3inv.ply \
+  --start_frame 86 \
+  --end_frame 99 \
+  --stride 6 \
+  --max_dt 0.20 \
+  --max_depth 10 \
+  --pose_source da3_inv
+
+python scripts/align_da3inv_ply_to_svo.py \
+  --input_ply outputs/euroc_v1_01/fusion/pcl_086_099_da3inv.ply \
+  --output_ply outputs/euroc_v1_01/fusion/pcl_086_099_da3inv_aligned_to_svo.ply \
+  --report_json outputs/euroc_v1_01/fusion/pcl_086_099_da3inv_aligned_to_svo_report.json \
+  --sync_csv outputs/euroc_v1_01/sync_086_099.csv \
+  --da3_npz outputs/euroc_v1_01/da3_086_099/exports/mini_npz/results.npz \
+  --start_frame 86 \
+  --end_frame 99 \
+  --max_dt 0.20
+```
+
+Alignment results:
+```text
+70-85:
+scale: 0.881106288
+center alignment rmse: 0.061002403
+median: 0.052257319
+max: 0.110568903
+points: 72576
+
+86-99:
+scale: 0.809408675
+center alignment rmse: 0.047805449
+median: 0.042195102
+max: 0.084149186
+points: 63504
+```
+
+All five aligned chunks now exist:
+```text
+outputs/euroc_v1_01/fusion/pcl_022_037_da3inv_aligned_to_svo.ply
+outputs/euroc_v1_01/fusion/pcl_038_053_da3inv_aligned_to_svo.ply
+outputs/euroc_v1_01/fusion/pcl_054_069_da3inv_aligned_to_svo.ply
+outputs/euroc_v1_01/fusion/pcl_070_085_da3inv_aligned_to_svo.ply
+outputs/euroc_v1_01/fusion/pcl_086_099_da3inv_aligned_to_svo.ply
+```
