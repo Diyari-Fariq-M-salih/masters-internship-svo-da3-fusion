@@ -129,6 +129,35 @@ def estimate_svo_to_da3_inv_sim3(rows, E_all, start_frame):
     return T_sim3, scale, rotation, translation, errors
 
 
+def estimate_da3_inv_to_svo_sim3(rows, E_all, da3_start_frame):
+    if E_all is None:
+        raise KeyError("DA3 npz does not contain 'extrinsics'.")
+
+    da3_inv_centers = []
+    svo_centers = []
+
+    for row in rows:
+        frame_id = int(row["frame_id"])
+        depth_idx = frame_id - da3_start_frame
+        if depth_idx < 0 or depth_idx >= E_all.shape[0]:
+            raise IndexError(
+                f"Frame {frame_id} maps to DA3 depth index {depth_idx}, "
+                f"but extrinsics array has shape {E_all.shape}."
+            )
+
+        T_da3 = da3_extrinsics_to_matrix(E_all[depth_idx])
+        T_da3_inv = np.linalg.inv(T_da3)
+        da3_inv_centers.append(T_da3_inv[:3, 3])
+        svo_centers.append([float(row["tx"]), float(row["ty"]), float(row["tz"])])
+
+    scale, rotation, translation, errors = estimate_sim3_umeyama(
+        np.array(da3_inv_centers, dtype=np.float64),
+        np.array(svo_centers, dtype=np.float64),
+    )
+
+    return scale, rotation, translation, errors
+
+
 def backproject_frame(rgb_bgr, depth, K, T_w_c, stride, max_depth):
     h, w = depth.shape
 
@@ -231,9 +260,45 @@ def main():
     parser.add_argument("--output", required=True)
     parser.add_argument("--start_frame", type=int, default=1)
     parser.add_argument("--end_frame", type=int, default=15)
+    parser.add_argument(
+        "--da3_start_frame",
+        type=int,
+        default=None,
+        help=(
+            "Original frame id corresponding to DA3 depth index 0. Defaults to "
+            "--start_frame for backwards compatibility."
+        ),
+    )
     parser.add_argument("--stride", type=int, default=6)
     parser.add_argument("--max_dt", type=float, default=0.20)
     parser.add_argument("--max_depth", type=float, default=None)
+    parser.add_argument(
+        "--depth_scale",
+        type=float,
+        default=1.0,
+        help="Scalar applied to DA3 depth values before backprojection.",
+    )
+    parser.add_argument(
+        "--auto_depth_scale_from_da3_inv_to_svo",
+        action="store_true",
+        help=(
+            "Estimate DA3-inv -> SVO Sim(3) from camera centers and multiply "
+            "depths by the estimated scale. Intended for trajectory-first "
+            "fusion where SVO poses place DA3 depth maps in the global frame."
+        ),
+    )
+    parser.add_argument(
+        "--scale_start_frame",
+        type=int,
+        default=None,
+        help="First frame used for automatic depth-scale estimation.",
+    )
+    parser.add_argument(
+        "--scale_end_frame",
+        type=int,
+        default=None,
+        help="Last frame used for automatic depth-scale estimation.",
+    )
     parser.add_argument(
         "--pose_source",
         choices=["svo", "svo_sim3_da3inv", "da3", "da3_inv", "identity"],
@@ -248,6 +313,9 @@ def main():
 
     rgb_dir = Path(args.rgb_dir)
     da3 = np.load(args.da3_npz)
+    da3_start_frame = (
+        args.da3_start_frame if args.da3_start_frame is not None else args.start_frame
+    )
 
     depth_all = da3["depth"]
     K_all = da3["intrinsics"]
@@ -280,7 +348,7 @@ def main():
             sim3_rotation,
             sim3_translation,
             sim3_errors,
-        ) = estimate_svo_to_da3_inv_sim3(rows, E_all, args.start_frame)
+        ) = estimate_svo_to_da3_inv_sim3(rows, E_all, da3_start_frame)
 
         print("Estimated Sim(3), SVO -> DA3-inverted:")
         print(f"  scale: {sim3_scale:.9f}")
@@ -300,6 +368,49 @@ def main():
             f"max={np.max(sim3_errors):.9f}"
         )
 
+    depth_scale = float(args.depth_scale)
+    if args.auto_depth_scale_from_da3_inv_to_svo:
+        scale_start_frame = (
+            args.scale_start_frame
+            if args.scale_start_frame is not None
+            else args.start_frame
+        )
+        scale_end_frame = (
+            args.scale_end_frame if args.scale_end_frame is not None else args.end_frame
+        )
+        scale_rows = load_sync_rows(
+            args.sync_csv,
+            start_frame=scale_start_frame,
+            end_frame=scale_end_frame,
+            max_dt=args.max_dt,
+        )
+        if not scale_rows:
+            raise RuntimeError("No synchronized rows found for depth-scale estimation.")
+
+        (
+            auto_depth_scale,
+            auto_scale_rotation,
+            auto_scale_translation,
+            auto_scale_errors,
+        ) = estimate_da3_inv_to_svo_sim3(
+            scale_rows,
+            E_all,
+            da3_start_frame,
+        )
+        depth_scale *= auto_depth_scale
+
+        print("Estimated Sim(3), DA3-inverted -> SVO for depth scale:")
+        print(f"  scale frames: {scale_start_frame}-{scale_end_frame}")
+        print(f"  scale: {auto_depth_scale:.9f}")
+        print(
+            "  center alignment error: "
+            f"rmse={np.sqrt(np.mean(auto_scale_errors * auto_scale_errors)):.9f}, "
+            f"median={np.median(auto_scale_errors):.9f}, "
+            f"max={np.max(auto_scale_errors):.9f}"
+        )
+
+    print(f"Depth scale: {depth_scale:.9f}")
+
     all_points = []
     all_colors = []
 
@@ -314,7 +425,7 @@ def main():
 
         # DA3 chunk indexing:
         # original frame_id start_frame maps to DA3 depth index 0.
-        depth_idx = frame_id - args.start_frame
+        depth_idx = frame_id - da3_start_frame
 
         if depth_idx < 0 or depth_idx >= depth_all.shape[0]:
             raise IndexError(
@@ -323,7 +434,7 @@ def main():
                 f"Check start_frame/end_frame and DA3 chunk."
             )
 
-        depth = depth_all[depth_idx]
+        depth = depth_all[depth_idx].astype(np.float32) * depth_scale
         K = K_all[depth_idx]
         T_w_c = choose_pose_matrix(
             args,

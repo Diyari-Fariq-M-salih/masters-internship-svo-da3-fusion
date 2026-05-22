@@ -2500,3 +2500,55 @@ is a sanity gate rather than a full visual-inertial calibration/evaluation, but
 the roughly 7.5 cm RMSE over the available 22.9 s segment is good enough to
 proceed with SVO-owned global placement experiments.
 ```
+
+### Repository cleanup and current best-result summary
+
+Current best results to show externally:
+```text
+SVO trajectory sanity:
+outputs/svo_v1_01_clean/svo_vs_gt_trajectory_compare.png
+outputs/svo_v1_01_clean/svo_vs_gt_sim3_report.json
+
+Best larger-window DA3 overlap:
+outputs/euroc_v1_01/fusion/30_overlap_16f/pcl_030_045_r448_da3inv_aligned_to_022_037_overlap.ply
+
+Best smaller-window DA3 overlap:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+
+Same-frame context diagnostic:
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_044_038046_vs_041049_report.json
+```
+
+Supervisor email package:
+```text
+outputs/email_supervisor_current_findings_2026-05-22/
+outputs/email_supervisor_current_findings_2026-05-22.zip
+```
+
+Main interpretation:
+```text
+1. SVO V1_01 trajectory is good enough to use as a global path after Sim(3)
+   sanity checking against ground truth.
+2. DA3 local chunks can be coherent and small DA3-to-DA3 overlap windows can
+   align visually.
+3. DA3-to-DA3 stitching does not scale reliably to the full sequence.
+4. The same RGB/grayscale frame can reconstruct differently in different DA3
+   chunk contexts, so the issue is not only Sim(3) alignment error.
+5. Full-scene DA3 overlap-chain attempts are retained as negative diagnostics,
+   not as current best results.
+```
+
+Recent full-scene negative diagnostics:
+```text
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/pcl_022_099_da3inv_overlap_chain16_newframes_merged.ply
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/chain_9f6o/pcl_022_099_da3inv_overlap_chain9f6o_newframes_merged.ply
+```
+
+Next technical direction:
+```text
+Before more full-scene fusion, verify DA3 depth-ray/camera-frame conventions
+against SVO poses and intrinsics. Then continue with the supervisor's
+trajectory-first approach: SVO owns global placement, DA3 supplies local dense
+geometry, and overlaps are used for local scale/depth correction rather than as
+the only global stitching mechanism.
+```

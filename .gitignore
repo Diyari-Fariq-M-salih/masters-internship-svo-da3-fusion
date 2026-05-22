@@ -47,7 +47,7 @@ outputs/
 *.bag
 *.ply
 *.npy
-*.npzsvo_ws/
+*.npz
 
 # from SVO
 svo_ws/
