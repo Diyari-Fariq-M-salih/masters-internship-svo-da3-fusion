@@ -2411,3 +2411,92 @@ plus matching ground-truth/depth metadata. This gives a real RGB test case and
 lets us directly measure DA3 depth scale against sensor depth, instead of only
 comparing DA3 chunks to each other.
 ```
+
+### Short finding summary before trajectory-first path
+
+Current DA3 chunk-stitching findings:
+```text
+1. Individual DA3 chunks can look coherent.
+2. Actual merged clouds are the real test; transformed source chunks alone can
+   look good while merged overlays are bad.
+3. EuRoC grayscale DA3 chunks showed context-dependent same-frame scale drift:
+   the same RGB/grayscale frame reconstructed in two chunks differed by about
+   3-4% depth scale.
+4. Real RGB from TUM fr1/desk improved same-frame consistency, but the actual
+   9-frame/6-overlap merge was still bad.
+5. Therefore the issue is not only grayscale input. DA3 chunk coordinate gauges
+   are still not stable enough for simple DA3-to-DA3 Sim(3) concatenation.
+```
+
+Decision:
+```text
+Move toward the supervisor's trajectory-first approach:
+SVO/trajectory owns global placement; DA3 provides local dense geometry inside
+trajectory intervals. Overlap is used for local scale/pose correction and
+duplicate handling, not as the only global stitching mechanism.
+```
+
+Next gate before trajectory-first fusion:
+```text
+Verify SVO trajectory quality by aligning SVO to ground truth with Sim(3) and
+reporting ATE-style error. If SVO is stable enough, use it as the global path
+for placing DA3 interval reconstructions.
+```
+
+### SVO trajectory sanity check against V1_01 ground truth
+
+Added:
+```text
+scripts/compare_trajectory_to_gt.py
+```
+
+Purpose:
+```text
+Align an estimated TUM-format trajectory to a ground-truth TUM-format trajectory
+with Sim(3), then report ATE-style position error.
+```
+
+Command:
+```bash
+python scripts/compare_trajectory_to_gt.py \
+  --estimate outputs/svo_v1_01_clean/svo_pose_cam_tum.txt \
+  --groundtruth svo_ws/src/rpg_trajectory_evaluation/results/euroc_vislam_mono/laptop/vislam_ba/laptop_vislam_ba_V1_01/stamped_groundtruth.txt \
+  --max_dt 0.01 \
+  --report_json outputs/svo_v1_01_clean/svo_vs_gt_sim3_report.json \
+  --aligned_tum outputs/svo_v1_01_clean/svo_pose_cam_aligned_to_gt_tum.txt
+```
+
+Result:
+```text
+matched poses: 459 / 459
+time span: 22.900 s
+timestamp max dt: 0.000000000
+
+estimated path length: 8.179511891
+ground-truth path length: 7.502642636
+estimate/GT path ratio before alignment: 1.090217446
+
+Sim(3) scale, SVO -> GT: 0.990382414
+
+ATE after Sim(3):
+rmse:   0.074960917 m
+median: 0.072111152 m
+mean:   0.069553772 m
+p95:    0.114548589 m
+max:    0.144877287 m
+```
+
+Outputs:
+```text
+outputs/svo_v1_01_clean/svo_vs_gt_sim3_report.json
+outputs/svo_v1_01_clean/svo_pose_cam_aligned_to_gt_tum.txt
+```
+
+Interpretation:
+```text
+The clean SVO V1_01 trajectory is usable as a global path for the next
+trajectory-first fusion test. The current check is position-only Sim(3), so it
+is a sanity gate rather than a full visual-inertial calibration/evaluation, but
+the roughly 7.5 cm RMSE over the available 22.9 s segment is good enough to
+proceed with SVO-owned global placement experiments.
+```
