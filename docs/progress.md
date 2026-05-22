@@ -2552,3 +2552,139 @@ trajectory-first approach: SVO owns global placement, DA3 supplies local dense
 geometry, and overlaps are used for local scale/depth correction rather than as
 the only global stitching mechanism.
 ```
+
+### GCS-lite submap graph and TUM depth-anchor tests
+
+Implemented paper-inspired submap graph diagnostic:
+```text
+scripts/optimize_da3_submap_graph.py
+```
+
+Purpose:
+```text
+Test a simplified version of the GCS-SLAM-style idea without implementing full
+GCS-SLAM: DA3 chunks are submap nodes, overlaps create graph edges, and all
+submap Sim(3) transforms are optimized together instead of greedily chaining
+pairwise transforms.
+```
+
+Key full-scene V1_01 graph outputs:
+```text
+Greedy 9f/6-overlap chain:
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/chain_9f6o/pcl_022_099_da3inv_overlap_chain9f6o_newframes_merged.ply
+
+Submap graph, camera-center/pose-edge constraints:
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/chain_9f6o/pcl_022_099_da3inv_submap_graph9f6o_pose_edges_merged.ply
+
+Submap graph, dense same-pixel overlap edges:
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/chain_9f6o/pcl_022_099_da3inv_submap_graph9f6o_dense_edges_merged.ply
+
+Dense overlap graph with SVO camera-center anchors:
+outputs/euroc_v1_01/fusion/70_overlap_chain_whole_scene/chain_9f6o/pcl_022_099_da3inv_submap_graph9f6o_dense_svoanchors_w4p0_merged.ply
+```
+
+Graph result summary:
+```text
+Greedy chain:
+final global scale: 2.9236
+scale range: 1.0000 - 3.3474
+
+Camera-center/pose-edge graph:
+overlap center RMSE: 0.0411 -> 0.0314
+final global scale: 1.6027
+scale range: 0.7973 - 1.9361
+
+Dense same-pixel graph:
+overlap center RMSE: 0.2288 -> 0.1843
+final global scale: 0.3714
+scale range: 0.3227 - 1.0000
+
+Dense same-pixel graph + SVO anchors, weight 4.0:
+overlap center RMSE: 0.2288 -> 0.0752
+SVO anchor RMSE: 0.7807 -> 0.0620
+final global scale: 0.5477
+scale range: 0.4205 - 1.0000
+```
+
+Interpretation:
+```text
+The GCS-style submap graph helps reduce pure greedy-chain drift, especially
+when SVO trajectory anchors are added. However, the full-scene PLYs are still
+visually poor. The dense same-pixel edges are harmed by DA3's context-dependent
+same-frame geometry, and SVO anchors can force camera centers closer to the
+trajectory but cannot by themselves fix inconsistent DA3 depth surfaces.
+```
+
+Implemented TUM RGB-D depth-anchor proof of concept:
+```text
+scripts/make_tum_da3_depth_anchor_pcl.py
+```
+
+Purpose:
+```text
+Use TUM sensor depth as metric anchors to test whether DA3 depth can be
+calibrated per frame before trajectory-first fusion. This is a direct proxy for
+the EuRoC plan where sensor depth will be replaced by sparse SVO/COLMAP
+triangulated anchors.
+```
+
+TUM outputs:
+```text
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/020_028/
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/023_031/
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/029_031_from_023_031/
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/merged_020_031_gtpose/
+```
+
+Best TUM files to inspect:
+```text
+Sensor-depth reference:
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/merged_020_031_gtpose/pcl_020_031_tum_gtpose_sensor_depth_merged.ply
+
+Raw DA3 depth with GT poses:
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/merged_020_031_gtpose/pcl_020_031_tum_gtpose_da3_raw_merged.ply
+
+Scale-corrected DA3 depth with GT poses:
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/merged_020_031_gtpose/pcl_020_031_tum_gtpose_da3_scale_merged.ply
+
+Affine-corrected DA3 depth with GT poses:
+outputs/tum_fr1_desk/fusion/60_depth_anchor_test/merged_020_031_gtpose/pcl_020_031_tum_gtpose_da3_affine_merged.ply
+```
+
+TUM depth-anchor numeric result:
+```text
+Chunk 020-028:
+raw median absolute depth error:         0.0201 m
+scale-corrected median absolute error:   0.0117 m
+affine-corrected median absolute error:  0.0119 m
+inverse-depth affine median error:       0.0101 m
+
+Chunk 023-031:
+raw median absolute depth error:         0.0145 m
+scale-corrected median absolute error:   0.0075 m
+affine-corrected median absolute error:  0.0075 m
+inverse-depth affine median error:       0.0071 m
+```
+
+Interpretation:
+```text
+The TUM depth-anchor experiment is stable and encouraging. DA3 depth on real RGB
+is already close to metric for this short TUM segment, and per-frame depth
+anchoring roughly halves the median depth error. This supports the next major
+EuRoC direction: replace TUM sensor depth with sparse metric anchors from SVO
+map points, COLMAP, or triangulated feature tracks, then use SVO poses to place
+the corrected DA3 depth globally.
+```
+
+Next concrete task:
+```text
+Find or generate EuRoC sparse depth anchors.
+Priority:
+1. Inspect whether SVO exported usable sparse map points.
+2. If not, run/use COLMAP sparse reconstruction on the same EuRoC frames.
+3. If needed, triangulate feature tracks using SVO poses.
+
+Then implement the EuRoC analogue of the TUM depth-anchor test:
+DA3 depth at sparse anchor pixels vs sparse metric depth, fit per-frame
+scale/affine/inverse-depth correction, then reconstruct with SVO poses.
+```
