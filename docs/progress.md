@@ -2135,3 +2135,279 @@ Note:
 Older progress entries may show the pre-cleanup flat `fusion/*.ply` paths.
 Those files now live under the categorized subfolders above.
 ```
+
+### Same-frame DA3 context consistency diagnostic
+
+Added:
+```text
+scripts/compare_da3_same_frame.py
+```
+
+Purpose:
+```text
+Test whether the exact same RGB frame reconstructed inside two different DA3
+chunks produces compatible geometry. If the same frame differs between chunks,
+then chunk-to-chunk Sim(3) stitching is fundamentally limited.
+```
+
+Diagnostic method:
+```text
+For one shared frame:
+1. Load the target chunk's DA3 depth/intrinsics/extrinsics for that frame.
+2. Load the source chunk's DA3 depth/intrinsics/extrinsics for the same frame.
+3. Backproject both into their own DA3-inverted local worlds.
+4. Align source to target using the same-frame DA3 camera pose relation.
+5. Also test pose alignment plus a per-frame source->target depth scale.
+6. Write colored merged PLYs and a JSON report.
+```
+
+Tested current best pair:
+```text
+target chunk: 38-46
+source chunk: 41-49
+shared frames tested: 41, 44, 46
+```
+
+Example command:
+```bash
+conda run -n da3 python scripts/compare_da3_same_frame.py \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --source_da3_npz outputs/euroc_v1_01/da3_041_049/exports/mini_npz/results.npz \
+  --target_start_frame 38 \
+  --source_start_frame 41 \
+  --frame_id 44 \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --output_dir outputs/euroc_v1_01/fusion/50_same_frame_checks \
+  --label frame_044_038046_vs_041049 \
+  --stride 6 \
+  --max_depth 10
+```
+
+Results:
+```text
+frame 41:
+  source/target depth ratio median: 1.043478538
+  source->target depth scale: 0.960148660
+  pose-only NN rmse: 0.111875038
+  pose+depth-scale NN rmse: 0.044997705
+
+frame 44:
+  source/target depth ratio median: 1.034060399
+  source->target depth scale: 0.966470216
+  pose-only NN rmse: 0.094449058
+  pose+depth-scale NN rmse: 0.036497768
+
+frame 46:
+  source/target depth ratio median: 1.035772071
+  source->target depth scale: 0.965843876
+  pose-only NN rmse: 0.097086789
+  pose+depth-scale NN rmse: 0.042759543
+```
+
+Visual check targets:
+```text
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_041_038046_vs_041049_pose_aligned_merged_colored.ply
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_041_038046_vs_041049_pose_depthscale_aligned_merged_colored.ply
+
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_044_038046_vs_041049_pose_aligned_merged_colored.ply
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_044_038046_vs_041049_pose_depthscale_aligned_merged_colored.ply
+
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_046_038046_vs_041049_pose_aligned_merged_colored.ply
+outputs/euroc_v1_01/fusion/50_same_frame_checks/frame_046_038046_vs_041049_pose_depthscale_aligned_merged_colored.ply
+```
+
+Interpretation:
+```text
+The same RGB frames are not identical across DA3 chunk contexts. The source
+chunk depth is consistently about 3-4% larger than the target chunk depth for
+the tested frames. Applying a per-frame depth scale improves the same-frame
+nearest-neighbor error by roughly 2x to 3x.
+
+This explains why chunk-level Sim(3) merges can look worse than expected: DA3
+chunk differences are not only one clean global pose transform. There is also
+context-dependent depth scale, and likely some residual non-uniform geometry
+difference after scale correction.
+```
+
+Project conclusion from same-frame check:
+```text
+The same frame inside different DA3 chunks does not produce identical depth,
+pose-relative geometry, or scale. Therefore, even if two chunks are aligned
+with Sim(3), there will still be residual drift or doubled surfaces in the
+overlap. The error is partly inside DA3's context-dependent reconstruction, not
+only in our merge transform.
+
+Practical consequence:
+DA3 chunk fusion should not assume that overlapping chunks are related by one
+perfect global Sim(3). We can reduce the error with smaller windows, overlap,
+orientation constraints, and per-frame/per-overlap scale correction, but a
+pure chunk-level Sim(3) merge cannot make all overlapping surfaces coincide
+when DA3 predicts different geometry for the same RGB frames in different
+chunks.
+```
+
+### Per-frame depth-scale merge test
+
+Next tested whether the same-frame depth-scale correction helps the actual
+chunk merge for the best pair:
+```text
+target chunk: 38-46
+source chunk: 41-49
+overlap: 41-46
+```
+
+Added:
+```text
+scripts/make_da3_depth_scaled_chunk.py
+```
+
+Purpose:
+```text
+Estimate source->target depth scales from the shared DA3 frames, then rebuild
+the source DA3-inverted point cloud after multiplying each source depth map by
+its overlap-derived scale. For non-overlap frames, clamp to the nearest overlap
+scale.
+```
+
+Built per-frame depth-scaled source:
+```bash
+conda run -n da3 python scripts/make_da3_depth_scaled_chunk.py \
+  --source_da3_npz outputs/euroc_v1_01/da3_041_049/exports/mini_npz/results.npz \
+  --target_da3_npz outputs/euroc_v1_01/da3_038_046/exports/mini_npz/results.npz \
+  --source_start_frame 41 \
+  --source_end_frame 49 \
+  --target_start_frame 38 \
+  --overlap_start_frame 41 \
+  --overlap_end_frame 46 \
+  --rgb_dir outputs/euroc_v1_01/cam0_rgb \
+  --output outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_041_049_da3inv_depthscaled_to_038_046.ply \
+  --report_json outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_041_049_da3inv_depthscaled_to_038_046_report.json \
+  --scale_mode per_frame_nearest \
+  --stride 6 \
+  --max_depth 10
+```
+
+Applied scales:
+```text
+frame 41: 0.960148660
+frame 42: 0.961668432
+frame 43: 0.962484538
+frame 44: 0.966470216
+frame 45: 0.961439350
+frame 46: 0.965843876
+frame 47: 0.965843876
+frame 48: 0.965843876
+frame 49: 0.965843876
+```
+
+Output:
+```text
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_041_049_da3inv_depthscaled_to_038_046.ply
+points: 40,824
+```
+
+Aligned the depth-scaled source two ways:
+```text
+1. normal center-estimated Sim(3), scale 0.943515259
+2. scale-fixed alignment, scale 1.000000000
+```
+
+Merged visual diagnostics:
+```text
+Normal Sim(3) after source depth scaling:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_depthscaled_merged.ply
+
+Scale-fixed alignment after source depth scaling:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_depthscaled_scale1_merged.ply
+```
+
+Compare against previous baselines:
+```text
+Original 9f6o merge:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+
+Scale-fixed without depth scaling, visually worse:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_scale1_merged.ply
+```
+
+Interpretation to check visually:
+```text
+If depthscaled_merged improves the wall-height mismatch, then per-frame depth
+scale correction is useful, but still compatible with chunk-level camera-center
+Sim(3). If depthscaled_scale1_merged improves more, then the Sim(3) scale was
+double-counting the depth correction. If both are worse, then per-frame depth
+scale alone is insufficient and remaining rotation/nonuniform geometry is the
+dominant error.
+```
+
+### End-of-day status and next dataset
+
+Visual inspection after the per-frame depth-scale test:
+```text
+Best/most useful candidates:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_merged.ply
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_depthscaled_scale1_merged.ply
+
+Less useful:
+outputs/euroc_v1_01/fusion/40_overlap_9f/pcl_038_049_da3inv_overlap_9f6o_depthscaled_merged.ply
+```
+
+Interpretation:
+```text
+The original 9-frame/6-overlap Sim(3) merge remains competitive, and the
+per-frame depth-scaled + scale-fixed merge is also promising. This suggests
+that local depth-scale correction is useful, but stacking per-frame depth
+scaling with another global Sim(3) scale can over-correct. The cleaner model is
+likely:
+
+1. correct source depths locally/per-frame or per-overlap
+2. align chunks with rotation + translation, or tightly constrained scale
+```
+
+Major lesson from today:
+```text
+DA3 chunk overlap errors are not only caused by bad Sim(3) estimation. The same
+RGB frame reconstructed in different DA3 chunk contexts can have different
+depth scale and residual geometry. Therefore pure chunk-level Sim(3) stitching
+cannot guarantee perfect overlap, even when the estimated transform is
+reasonable.
+```
+
+Checked newly added TUM RGB-D Freiburg1 datasets:
+```text
+data_local/rgbd_freiburg1/rgbd_dataset_freiburg1_desk
+data_local/rgbd_freiburg1/rgbd_dataset_freiburg1_room
+```
+
+`fr1/desk` sanity check:
+```text
+RGB images: 613
+Depth images: 595
+RGB list entries: 613
+Depth list entries: 595
+Ground-truth poses: 2335
+Accelerometer entries: 11815
+RGB format: 640 x 480, 8-bit RGB PNG
+Depth format: 640 x 480, 16-bit grayscale PNG
+```
+
+`fr1/room` sanity check:
+```text
+RGB images: 1362
+Depth images: 1360
+RGB list entries: 1362
+Depth list entries: 1360
+Ground-truth poses: 4887
+Accelerometer entries: 24569
+RGB format: 640 x 480, 8-bit RGB PNG
+Depth format: 640 x 480, 16-bit grayscale PNG
+```
+
+Next recommended work session:
+```text
+Start with TUM RGB-D fr1/desk. Prepare a small helper that associates RGB,
+depth, and ground-truth poses by timestamp, then export short RGB chunks for DA3
+plus matching ground-truth/depth metadata. This gives a real RGB test case and
+lets us directly measure DA3 depth scale against sensor depth, instead of only
+comparing DA3 chunks to each other.
+```
