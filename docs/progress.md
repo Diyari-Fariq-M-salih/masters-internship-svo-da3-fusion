@@ -999,3 +999,28 @@ cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
 OUTPUT_ROOT=outputs/da3_v1_01_16f \
 bash scripts/batch_da3_chunks_to_ply.sh
 ```
+
+## fusion tests
+- using new script with command:
+```bash
+python3 scripts/fuse_da3_depths_with_svo.py \
+  --output_root outputs/da3_v1_01_16f \
+  --svo_traj outputs/svo_v1_01_imu/svo_pose_cam_imu_tum.txt \
+  --start_chunk 9 \
+  --max_chunks 31 \
+  --max_time_diff 0.03 \
+  --stride 3 \
+  --min_depth 0.2 \
+  --max_depth 8.0 \
+  --conf_percentile 10 \
+  --skip_duplicate_frames \
+  --pose_mode t_w_c \
+  --output outputs/da3_v1_01_16f/merged_depth_svo_direct.ply
+  ```
+- gives a generally good chunk placement, but da3 scale is inconsistent, some parts are bloated, others collapse inwards, with translational and rotational issues, but the general outline of the merge is promising
+
+- timestamp matching works
+- SVO t_w_c pose direction is the correct one
+- SVO is placing frames into a generally coherent scene
+- DA3 depth scale is still inconsistent
+- there may be a small camera-frame / calibration rotation issue
