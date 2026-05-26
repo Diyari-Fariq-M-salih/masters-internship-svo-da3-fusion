@@ -118,6 +118,43 @@ def save_aligned_tum(path, times, aligned_points, quats):
             )
 
 
+def save_trajectory_plot(path, est_xyz, gt_xyz, aligned_xyz):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), constrained_layout=True)
+    views = [
+        (0, 1, "x [m]", "y [m]", "XY"),
+        (0, 2, "x [m]", "z [m]", "XZ"),
+        (1, 2, "y [m]", "z [m]", "YZ"),
+    ]
+    for ax, (i, j, xlabel, ylabel, title) in zip(axes, views):
+        ax.plot(gt_xyz[:, i], gt_xyz[:, j], color="black", linewidth=1.8, label="GT cam0")
+        ax.plot(est_xyz[:, i], est_xyz[:, j], color="tab:orange", linewidth=1.0, alpha=0.7, label="SVO raw")
+        ax.plot(
+            aligned_xyz[:, i],
+            aligned_xyz[:, j],
+            color="tab:blue",
+            linewidth=1.2,
+            alpha=0.9,
+            label="SVO Sim(3)-aligned",
+        )
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.25)
+    axes[0].legend(loc="best")
+    fig.suptitle("SVO VIO trajectory vs EuRoC cam0 ground truth")
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Compare estimated trajectory to GT after Sim(3) alignment."
@@ -127,6 +164,7 @@ def main():
     parser.add_argument("--max_dt", type=float, default=0.01)
     parser.add_argument("--report_json", default=None)
     parser.add_argument("--aligned_tum", default=None)
+    parser.add_argument("--plot_png", default=None)
     args = parser.parse_args()
 
     est = load_tum(args.estimate)
@@ -180,6 +218,7 @@ def main():
         },
         "ate": error_stats,
         "aligned_tum": args.aligned_tum,
+        "plot_png": args.plot_png,
     }
 
     if args.report_json is not None:
@@ -196,6 +235,8 @@ def main():
             aligned,
             est[est_indices, 4:8],
         )
+    if args.plot_png is not None:
+        save_trajectory_plot(args.plot_png, est_xyz, gt_xyz, aligned)
 
     print("Trajectory Sim(3) alignment, estimate -> ground truth")
     print(f"  estimate:    {args.estimate}")
@@ -235,6 +276,8 @@ def main():
         print(f"  report: {args.report_json}")
     if args.aligned_tum is not None:
         print(f"  aligned_tum: {args.aligned_tum}")
+    if args.plot_png is not None:
+        print(f"  plot_png: {args.plot_png}")
 
 
 if __name__ == "__main__":
