@@ -19,6 +19,10 @@ removed from the active repo after the clean restart.
 
 ## DA3 Inspection
 
+- `prepare_euroc_da3_chunks.py`: prepare overlapping EuRoC cam0 image chunks for DA3 testing.
+- `run_da3_v1_01_first_chunk.sh`: run DA3 on the first V1_01 chunk as a GPU/memory smoke test.
+- `run_da3_v1_01_chunks.sh`: run a configurable V1_01 DA3 chunk batch after the first canary passes.
+- `da3_chunk_npz_to_ply.py`: convert a DA3 chunk `results.npz` into a local colored PLY.
 - `da3_npz_to_ply.py`: convert DA3 `mini_npz` output into a simple colored PLY.
 - `make_one_frame_ply.py`: build a diagnostic PLY for a single frame.
 

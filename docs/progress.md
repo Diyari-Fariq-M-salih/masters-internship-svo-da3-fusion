@@ -870,4 +870,84 @@ outputs/svo_v1_01_imu/svo_pose_cam_imu_tum.txt
 
 Evaluation-aligned trajectory:
 outputs/svo_v1_01_imu/svo_pose_cam_imu_aligned_to_gt_tum.txt
+
+Plots:
+outputs/svo_v1_01_imu/svo_pose_cam_imu_vs_gt.png
+```
+
+## DA3 V1_01
+
+The full V1_01 cam0 sequence has 2912 images. Running DA3 on the whole sequence
+in one call is not appropriate for the RTX 4070 12 GB setup.
+
+Initial failed test:
+
+```text
+32 frames
+process-res 448
+export mini_npz-glb
+result: CUDA OOM
+```
+
+Successful conservative test:
+
+```bash
+./scripts/run_da3_v1_01_first_chunk.sh
+```
+
+Settings:
+
+```text
+chunk size: 16 frames
+overlap: 4 frames
+process-res: 384
+export: mini_npz
+```
+
+Output:
+
+```text
+outputs/da3_v1_01_16f/da3/chunk_000_000000_000015/exports/mini_npz/results.npz
+```
+
+NPZ contents:
+
+```text
+arrays: depth, conf, extrinsics, intrinsics
+depth shape: (16, 252, 378)
+depth median: 1.7193108
+confidence median: 4.3800001
+file size: 6.1 MB
+```
+
+Generated DA3-only local PLY:
+
+```text
+outputs/da3_v1_01_16f/diagnostics/chunk_000_da3_local_inverted.ply
+points: 31441
+frames: 16
+extrinsic mode: invert
+```
+
+Result:
+
+```text
+The dense local DA3 chunk is much better than the sparse diagnostic. Room planes
+are coherent enough to continue DA3-only testing.
+```
+
+Prepared next batch runner:
+
+```text
+scripts/run_da3_v1_01_chunks.sh
+```
+
+Default batch:
+
+```text
+MAX_CHUNKS=5
+CHUNK_SIZE=16
+OVERLAP=4
+PROCESS_RES=384
+EXPORT_FORMAT=mini_npz
 ```
