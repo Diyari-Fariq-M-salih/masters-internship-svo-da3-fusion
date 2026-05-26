@@ -951,3 +951,51 @@ OVERLAP=4
 PROCESS_RES=384
 EXPORT_FORMAT=mini_npz
 ```
+
+## Execution Summary: DA3 Chunk Processing
+
+* **Script Executed:** `./scripts/run_da3_v1_01_chunks.sh`
+* **Total Frames Selected:** 2912 frames (IDs 0–2911)
+* **Chunks Processed:** 5 overlapping chunks (16 frames each)
+* **Model Loaded:** `depth-anything/DA3NESTED-GIANT-LARGE-1.1`
+* **Manifest Path:** `outputs/da3_v1_01_16f/chunks_manifest.json`
+* **Status:** Successfully completed.
+
+---
+
+### Chunk Overview
+
+| Chunk ID | Frame Range | Output Directory | Status |
+| --- | --- | --- | --- |
+| **chunk_000** | `000000_000015` | `outputs/da3_v1_01_16f/da3/chunk_000_000000_000015` | Success |
+| **chunk_001** | `000012_000027` | `outputs/da3_v1_01_16f/da3/chunk_001_000012_000027` | Success |
+| **chunk_002** | `000024_000039` | `outputs/da3_v1_01_16f/da3/chunk_002_000024_000039` | Success |
+| **chunk_003** | `000036_000051` | `outputs/da3_v1_01_16f/da3/chunk_003_000036_000051` | Success |
+| **chunk_004** | `000048_000063` | `outputs/da3_v1_01_16f/da3/chunk_004_000048_000063` | Success |
+
+---
+
+### Key Technical Details
+
+* **Input Image Shape:** `torch.Size([16, 3, 252, 378])`
+* **Reference View Strategy:** `saddle_balanced`
+* **Export Format:** `mini_npz`
+* **Performance Metrics (Average per chunk):**
+* *Image Processing:* ~0.03 seconds
+* *Model Forward Pass:* ~1.52 seconds
+* *Prediction Conversion:* ~0.004 seconds
+---
+
+## reproduceable commands for da3
+
+- Using script to generate chunks from 16 frames, adjust chunks to disired number
+```bash
+./scripts/run_da3_v1_01_chunks.sh
+```
+- Using chunks to ply to generate point clouds, adjust stride for density, currently set to 2
+```bash
+cd ~/Documents/Diyari_M_salih_2026/masters-internship-svo-da3-fusion
+
+OUTPUT_ROOT=outputs/da3_v1_01_16f \
+bash scripts/batch_da3_chunks_to_ply.sh
+```
